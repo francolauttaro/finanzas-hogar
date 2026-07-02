@@ -16,7 +16,7 @@
   --sh:0 1px 0 rgba(0,0,0,.04),0 8px 24px -16px rgba(21,32,31,.28);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
-html,body{background:var(--paper);color:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+html,body{background:var(--paper);color:var(--ink);overscroll-behavior:none;font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
   font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 .wrap{max-width:540px;margin:0 auto;padding:0 14px 96px}
 header{max-width:540px;margin:0 auto;padding:16px 14px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -121,6 +121,9 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .fe-line .fe-dia{width:64px;flex:none;text-align:center}
 .fe-line select{flex:1;min-width:0}
 .fe-del{border:none;background:none;color:var(--clay);font-size:22px;cursor:pointer;padding:0 6px;flex:none}
+.savebar{position:fixed;left:0;right:0;bottom:66px;max-width:540px;margin:0 auto;padding:10px 14px 12px;
+  background:linear-gradient(to top, var(--paper) 55%, transparent);z-index:25}
+.savebar .btn{margin:0;box-shadow:0 6px 18px -6px rgba(31,93,76,.5)}
 #toast{position:fixed;left:50%;bottom:78px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;
   padding:11px 18px;border-radius:99px;font-size:13.5px;font-weight:700;opacity:0;pointer-events:none;transition:all .25s;z-index:50;box-shadow:0 8px 24px -8px rgba(0,0,0,.4)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -165,6 +168,8 @@ let draft={monto:'',cat:'Comer afuera',quien:'Lautaro',medio:'Tarjeta',fecha:hoy
 let cdraft={descripcion:'',quien:'Lautaro',cuota_mensual:'',n_cuotas:'',mes_inicio:curYM};
 
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
+function fmtNum(v){const s=String(v).replace(/[^\d]/g,'');return s?parseInt(s,10).toLocaleString('es-AR'):'';}
+function parseNum(v){return parseFloat(String(v).replace(/\./g,'').replace(',','.'))||0;}
 const pctf=p=>(p*100).toFixed(0)+'%';
 const labelYM=ym=>{const[y,m]=ym.split('-');return MONTHS[+m-1]+' '+y;};
 const CC={'Comer afuera':'var(--clay)','Delivery':'var(--gold)','Salidas':'#b5683a','Súper':'var(--pine)','Combustible':'var(--blue)','Compras':'#8b5e9e','Servicios/Personal':'#4a7c7c','Otros':'var(--muted)','Fijos hogar':'#5b6b66','Fijos personales':'#8b7fae'};
@@ -295,7 +300,7 @@ function viewAdd(){
   const today=(summary&&summary.expenses||[]).filter(e=>e.date===hoy).slice().reverse();
   const tl=today.length?today.map(e=>'<div class="xrow"><span class="dot" style="background:'+cc(e.cat)+'"></span><span class="d">'+e.cat+(e.nota?' · '+e.nota:'')+'<small>'+e.quien+' · '+e.medio+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">Nada cargado hoy.</div>';
   return '<div class="card"><div class="eyebrow">Nuevo gasto</div>'
-  +'<div class="fg" style="margin-top:10px"><div class="amt-wrap"><input id="iAmt" onfocus="this.select()" inputmode="decimal" placeholder="0" value="'+draft.monto+'"></div></div>'
+  +'<div class="fg" style="margin-top:10px"><div class="amt-wrap"><input id="iAmt" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="0" value="'+draft.monto+'"></div></div>'
   +'<div class="fg"><label class="lbl">Categoría</label><div class="catgrid" id="catG">'+cats.map(c=>'<button data-c="'+c+'" class="'+(draft.cat===c?'on':'')+'">'+c+'</button>').join('')+'</div></div>'
   +'<div class="fg"><label class="lbl">Quién pagó</label><div class="seg" id="whoG">'+['Lautaro','Vanessa'].map(w=>'<button data-w="'+w+'" class="'+(draft.quien===w?'on':'')+'">'+w+'</button>').join('')+'</div></div>'
   +'<div class="grid2"><div class="fg"><label class="lbl">Medio</label><select id="iMedio">'+['Tarjeta','Débito','Efectivo','MercadoPago'].map(m=>'<option '+(draft.medio===m?'selected':'')+'>'+m+'</option>').join('')+'</select></div>'
@@ -316,7 +321,7 @@ function viewCuotas(){
   +'<div class="card"><div class="ct">Cargar compra en cuotas</div>'
   +'<div class="fg"><label class="lbl">Qué compraste</label><input id="cDesc" placeholder="ej: Heladera Fravega" value="'+cdraft.descripcion+'"></div>'
   +'<div class="fg"><label class="lbl">Quién</label><div class="seg" id="cWho">'+['Lautaro','Vanessa'].map(w=>'<button data-cw="'+w+'" class="'+(cdraft.quien===w?'on':'')+'">'+w+'</button>').join('')+'</div></div>'
-  +'<div class="grid2"><div class="fg"><label class="lbl">Cuota mensual</label><input id="cCuota" onfocus="this.select()" inputmode="decimal" placeholder="$" value="'+cdraft.cuota_mensual+'"></div>'
+  +'<div class="grid2"><div class="fg"><label class="lbl">Cuota mensual</label><input id="cCuota" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="$" value="'+fmtNum(cdraft.cuota_mensual)+'"></div>'
   +'<div class="fg"><label class="lbl"># de cuotas</label><input id="cN" onfocus="this.select()" inputmode="numeric" placeholder="6" value="'+cdraft.n_cuotas+'"></div></div>'
   +'<div class="fg"><label class="lbl">Mes de la 1ª cuota</label><input id="cIni" type="month" value="'+cdraft.mes_inicio+'"></div>'
   +'<button class="btn" id="bCuota">Agregar a cuotas</button></div>';
@@ -346,14 +351,14 @@ function viewDash(){
 function viewCfg(){
   const s=summary,c=(s&&s.config)||{};
   const v=k=>c[k]!==undefined?c[k]:'';
-  const row=(k,lab,hint)=>'<div class="cfgrow"><span class="k">'+lab+(hint?'<small>'+hint+'</small>':'')+'</span><input class="ci" onfocus="this.select()" data-key="'+k+'" inputmode="decimal" value="'+v(k)+'"></div>';
+  const row=(k,lab,hint,plain)=>{const val=plain?v(k):fmtNum(v(k));const oi=plain?'':' oninput="this.value=fmtNum(this.value)"';return '<div class="cfgrow"><span class="k">'+lab+(hint?'<small>'+hint+'</small>':'')+'</span><input class="ci" onfocus="this.select()"'+oi+' data-key="'+k+'" inputmode="decimal" value="'+val+'"></div>';};
   const sel=(k,lab,opts)=>{const cur=String(v(k));return '<div class="cfgrow"><span class="k">'+lab+'</span><select class="cs" data-key="'+k+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>';};
   const fd=(s&&s.fijosData)||{hogar:[],persL:[],persV:[]};
   const allF=[].concat(fd.hogar||[],fd.persL||[],fd.persV||[]);
   const opt=(list,cur)=>list.map(o=>'<option'+(o===cur?' selected':'')+'>'+o+'</option>').join('');
   const fijoEdit=f=>'<div class="fijoedit" data-fid="'+f.id+'">'
     +'<input class="fe-nombre" onfocus="this.select()" value="'+(f.nombre||'')+'">'
-    +'<div class="fe-line"><input class="fe-monto" onfocus="this.select()" inputmode="decimal" value="'+f.monto+'" placeholder="$">'
+    +'<div class="fe-line"><input class="fe-monto" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" value="'+fmtNum(f.monto)+'" placeholder="$">'
     +'<input class="fe-dia" onfocus="this.select()" inputmode="numeric" value="'+(f.dia||'')+'" placeholder="día">'
     +'<button class="fe-del" data-delf="'+f.id+'">×</button></div>'
     +'<div class="fe-line"><select class="fe-quien">'+opt(['Lautaro','Vanessa','Ambos'],f.quien)+'</select>'
@@ -362,17 +367,18 @@ function viewCfg(){
   +'<div class="hint">Actualizá lo que cambió este mes. Al guardar se aplican los ingresos, topes, reportes y los cambios en los fijos.</div>'
   +'<div class="blk">Ingresos del mes</div>'+row('incomeL','Sueldo Lautaro')+row('incomeV','Sueldo Vanessa')
   +'<div class="blk">Topes variables (dinámicos)</div>'
-  +row('pct_comer','Comer afuera (% ingreso)','sugerido 8–10%')+row('pct_salidas','Salidas (% ingreso)','sugerido 5%')
-  +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" data-key="cap_super" inputmode="decimal" value="'+v('cap_super')+'"></div>'
+  +row('pct_comer','Comer afuera (% ingreso)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% ingreso)','sugerido 5%',true)
+  +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" data-key="cap_super" inputmode="decimal" value="'+fmtNum(v('cap_super'))+'"></div>'
   +(s&&s.superSug?'<div class="suggest" id="useSug">↳ usar sugerencia '+fmt(s.superSug)+'</div>':'')
   +'<div class="blk">Reportes por mail</div>'
   +sel('rep_pagos','Aviso de pagos',[['off','No enviar'],['dia','El día del vencimiento'],['previo','El día anterior']])
   +sel('rep_resumen','Resumen completo',[['off','No enviar'],['semanal','Semanal (lunes)'],['mensual','Mensual (día 1)']])
-  +'<button class="btn" id="bCfg" style="margin-top:14px">Guardar el mes</button></div>'
-  +'<div class="card"><div class="eyebrow">Gastos fijos</div>'
+  +'</div>'
+  +'<div class="card" style="margin-bottom:80px"><div class="eyebrow">Gastos fijos</div>'
   +'<div class="hint">Editá nombre, monto, quién paga, tipo y día de vencimiento. El día alimenta los avisos de pago.</div>'
   +'<div style="margin-top:10px">'+(allF.length?allF.map(fijoEdit).join(''):'<div class="empty">Sin fijos. Agregá el primero.</div>')+'</div>'
-  +'<button class="btn ghost" id="bAddFijo">+ Agregar gasto fijo</button></div>';
+  +'<button class="btn ghost" id="bAddFijo">+ Agregar gasto fijo</button></div>'
+  +'<div class="savebar"><button class="btn" id="bCfg">Guardar el mes</button></div>';
 }
 
 function wire(){
@@ -382,7 +388,7 @@ function wire(){
   const amt=document.getElementById('iAmt'); if(amt)amt.oninput=e=>draft.monto=e.target.value;
   const bAdd=document.getElementById('bAdd'); if(bAdd)bAdd.onclick=()=>{
     if(Date.now()-lastSave<900) return;        // anti doble-toque (evita duplicados)
-    const m=parseFloat(String(document.getElementById('iAmt').value||'').replace(',','.'));
+    const m=parseNum(document.getElementById('iAmt').value);
     if(!m||m<=0){document.getElementById('iAmt').focus();return;}
     lastSave=Date.now();
     draft.medio=document.getElementById('iMedio').value;draft.fecha=document.getElementById('iFecha').value;draft.nota=document.getElementById('iNota').value.trim();
@@ -399,7 +405,7 @@ function wire(){
   document.querySelectorAll('[data-delc]').forEach(b=>b.onclick=async()=>{if(!confirm('¿Eliminar esta cuota?'))return;await post({action:'deleteCuota',id:b.dataset.delc});cuotas=await api({action:'cuotas',ym:curYM});render();});
   const bC=document.getElementById('bCuota'); if(bC)bC.onclick=async()=>{
     cdraft.descripcion=document.getElementById('cDesc').value.trim();
-    cdraft.cuota_mensual=parseFloat(String(document.getElementById('cCuota').value||'').replace(',','.'));
+    cdraft.cuota_mensual=parseNum(document.getElementById('cCuota').value);
     cdraft.n_cuotas=parseInt(document.getElementById('cN').value);cdraft.mes_inicio=document.getElementById('cIni').value;
     if(!cdraft.cuota_mensual||!cdraft.n_cuotas){alert('Completá cuota y cantidad');return;}
     bC.textContent='Guardando…';
@@ -407,7 +413,7 @@ function wire(){
     cdraft={descripcion:'',quien:'Lautaro',cuota_mensual:'',n_cuotas:'',mes_inicio:curYM};
     cuotas=await api({action:'cuotas',ym:curYM});dash=null;render();
   };
-  const us=document.getElementById('useSug'); if(us)us.onclick=()=>{document.querySelector('[data-key="cap_super"]').value=summary.superSug;};
+  const us=document.getElementById('useSug'); if(us)us.onclick=()=>{document.querySelector('[data-key="cap_super"]').value=fmtNum(summary.superSug);};
   // toggle de pagado (Tablero)
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.pay, wasPaid=b.dataset.paid==='1';
@@ -426,13 +432,13 @@ function wire(){
     post({action:'deleteFijo',id:b.dataset.delf}); setTimeout(async()=>{ summary=await api({action:'summary',ym:curYM}); render(); }, 1000); });
   const bCfg=document.getElementById('bCfg'); if(bCfg)bCfg.onclick=async()=>{
     const up={};
-    document.querySelectorAll('.ci').forEach(i=>{if(i.value!=='')up[i.dataset.key]=parseFloat(String(i.value).replace(',','.'))||0;});
+    document.querySelectorAll('.ci').forEach(i=>{if(i.value!=='')up[i.dataset.key]=parseNum(i.value);});
     document.querySelectorAll('.cs').forEach(i=>{up[i.dataset.key]=i.value;});
     // guardar cambios de cada fijo
     document.querySelectorAll('.fijoedit').forEach(fe=>{
       post({action:'updateFijo', id:fe.dataset.fid,
         nombre:fe.querySelector('.fe-nombre').value,
-        monto:parseFloat(String(fe.querySelector('.fe-monto').value).replace(',','.'))||0,
+        monto:parseNum(fe.querySelector('.fe-monto').value),
         dia:parseInt(fe.querySelector('.fe-dia').value)||0,
         quien:fe.querySelector('.fe-quien').value,
         tipo:fe.querySelector('.fe-tipo').value });
