@@ -163,7 +163,7 @@ const SCRIPT_URL='https://script.google.com/macros/s/AKfycby-G1_5nb98oPPjkVMU8nA
 const MONTHS=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function hoyISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 let curYM=hoyISO().slice(0,7);
-let tab='board', summary=null, dash=null, cuotas=null, loading=false;
+let tab='board', summary=null, dash=null, cuotas=null, loading=false, netError=false, editStamp=0;
 let draft={monto:'',cat:'Comer afuera',quien:'Lautaro',medio:'Tarjeta',fecha:hoyISO(),nota:''};
 let cdraft={descripcion:'',quien:'Lautaro',cuota_mensual:'',n_cuotas:'',mes_inicio:curYM};
 
@@ -175,10 +175,21 @@ const labelYM=ym=>{const[y,m]=ym.split('-');return MONTHS[+m-1]+' '+y;};
 const CC={'Comer afuera':'var(--clay)','Delivery':'var(--gold)','Súper':'var(--pine)','Salidas':'#b5683a','Combustible':'var(--blue)','Agua':'#4a9ec7','Viajes':'#4a7c7c','Gastos personales':'#8b7fae','Ropa':'#b06a8f','Otros':'var(--muted)','Fijos hogar':'#5b6b66','Fijos personales':'#8b7fae'};
 
 function cc(c){return CC[c]||'var(--muted)';}
-async function api(p){p._=Date.now();const r=await fetch(SCRIPT_URL+'?'+new URLSearchParams(p),{cache:'no-store'});return r.json();}
+async function api(p,timeoutMs){p._=Date.now();const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),timeoutMs||15000);try{const r=await fetch(SCRIPT_URL+'?'+new URLSearchParams(p),{cache:'no-store',signal:ctrl.signal});return await r.json();}finally{clearTimeout(t);}}
 function post(b){
+  editStamp=Date.now();  // hubo escritura local: un refresh viejo no debe pisarla
   // fire-and-forget en no-cors: la escritura viaja igual y NUNCA cuelga la UI
   try{ fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',body:JSON.stringify(b)}); }catch(e){}
+}
+// ---- caché local: abre al instante con la última foto y refresca por detrás ----
+function cacheKey(ym){return 'fh_v1_'+ym;}
+function saveCache(){ if(!summary||summary.error||loading) return; try{ localStorage.setItem(cacheKey(curYM), JSON.stringify({summary,dash,cuotas})); }catch(e){} }
+function loadCache(ym){ try{ const s=localStorage.getItem(cacheKey(ym)); return s?JSON.parse(s):null; }catch(e){ return null; } }
+async function fetchBundle(){
+  const d=await api({action:'all',ym:curYM});
+  if(d&&d.error==='action?'){ const sm=await api({action:'summary',ym:curYM}); return {summary:sm,dash:null,cuotas:null}; } // backend viejo
+  if(!d||d.error) throw new Error((d&&d.error)||'respuesta vacía');
+  return {summary:d.summary,dash:d.dashboard,cuotas:d.cuotas};
 }
 let _rc=null, lastSave=0;
 function reconciliar(delay){ clearTimeout(_rc); _rc=setTimeout(async()=>{ try{ summary=await api({action:'summary',ym:curYM}); dash=null; render(); }catch(e){} }, delay||2500); }
@@ -208,13 +219,20 @@ function recompute(){
 }
 
 async function loadAll(){
-  loading=true;render();
+  const reqStamp=Date.now();
+  const c=loadCache(curYM);
+  if(c&&c.summary){ summary=c.summary; dash=c.dash||null; cuotas=c.cuotas||null; loading=false; netError=false; render(); }
+  else { summary=null; dash=null; cuotas=null; loading=true; netError=false; render(); }
   try{
-    summary=await api({action:'summary',ym:curYM});
-    if(tab==='dash') dash=await api({action:'dashboard',ym:curYM});
-    if(tab==='cuotas') cuotas=await api({action:'cuotas',ym:curYM});
-  }catch(e){summary={error:String(e)};}
-  loading=false;render();
+    const b=await fetchBundle();
+    if(editStamp>reqStamp){ loading=false; render(); return; } // hubo edición local mientras cargaba
+    summary=b.summary; dash=b.dash; cuotas=b.cuotas;
+    loading=false; netError=false; render();
+  }catch(e){
+    loading=false;
+    if(!summary){ netError=true; }   // solo error duro si no hay nada cacheado que mostrar
+    render();
+  }
 }
 
 // month nav — atado UNA sola vez (este era el bug de los saltos)
@@ -226,7 +244,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=async()=>{
   render(); // muestra el contenido o un spinner al instante
   // carga diferida de las secciones pesadas
   if(tab==='dash'&&!dash){ dash=await api({action:'dashboard',ym:curYM}); if(tab==='dash')render(); }
-  if(tab==='cuotas'){ const c=await api({action:'cuotas',ym:curYM}); cuotas=c; if(tab==='cuotas')render(); }
+  if(tab==='cuotas'&&!cuotas){ const c=await api({action:'cuotas',ym:curYM}); cuotas=c; if(tab==='cuotas')render(); }
 });
 function shiftMonth(d){
   const[y,m]=curYM.split('-').map(Number);
@@ -239,13 +257,15 @@ function render(){
   document.getElementById('mLabel').textContent=labelYM(curYM);
   const app=document.getElementById('app');
   if(loading){app.innerHTML='<div class="card" style="text-align:center;padding:40px"><div class="spin"></div></div>';return;}
-  if(summary&&summary.error){app.innerHTML='<div class="card"><div class="banner b-red">No me pude conectar al Sheet. Revisá que el deployment esté activo y la URL sea correcta.<br><small>'+summary.error+'</small></div></div>';return;}
+  if(netError&&!summary){app.innerHTML='<div class="card" style="text-align:center;padding:36px 20px"><div style="font-size:15px;font-weight:700;margin-bottom:6px">No pude conectar</div><div class="hint" style="margin:0 0 16px">El servidor puede estar iniciándose. Probá de nuevo en unos segundos.</div><button class="btn" onclick="loadAll()">Reintentar</button></div>';return;}
+  if(summary&&summary.error){app.innerHTML='<div class="card"><div class="banner b-red">No me pude conectar al Sheet. Revisá que el deployment esté activo y la URL sea correcta.<br><small>'+summary.error+'</small></div><button class="btn" style="margin-top:12px" onclick="loadAll()">Reintentar</button></div>';return;}
   if(tab==='board')app.innerHTML=viewBoard();
   else if(tab==='add')app.innerHTML=viewAdd();
   else if(tab==='cuotas')app.innerHTML=viewCuotas();
   else if(tab==='dash')app.innerHTML=viewDash();
   else app.innerHTML=viewCfg();
   wire();
+  saveCache();
 }
 
 function meter(label,sp,cap,el,dim,noCap){
