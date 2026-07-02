@@ -172,7 +172,7 @@ function fmtNum(v){const s=String(v).replace(/[^\d]/g,'');return s?parseInt(s,10
 function parseNum(v){return parseFloat(String(v).replace(/\./g,'').replace(',','.'))||0;}
 const pctf=p=>(p*100).toFixed(0)+'%';
 const labelYM=ym=>{const[y,m]=ym.split('-');return MONTHS[+m-1]+' '+y;};
-const CC={'Comer afuera':'var(--clay)','Delivery':'var(--gold)','Salidas':'#b5683a','Súper':'var(--pine)','Combustible':'var(--blue)','Compras':'#8b5e9e','Servicios/Personal':'#4a7c7c','Otros':'var(--muted)','Fijos hogar':'#5b6b66','Fijos personales':'#8b7fae'};
+const CC={'Comer afuera':'var(--clay)','Delivery':'var(--gold)','Súper':'var(--pine)','Salidas':'#b5683a','Combustible':'var(--blue)','Agua':'#4a9ec7','Viajes':'#4a7c7c','Gastos personales':'#8b7fae','Ropa':'#b06a8f','Otros':'var(--muted)','Fijos hogar':'#5b6b66','Fijos personales':'#8b7fae'};
 
 function cc(c){return CC[c]||'var(--muted)';}
 async function api(p){p._=Date.now();const r=await fetch(SCRIPT_URL+'?'+new URLSearchParams(p),{cache:'no-store'});return r.json();}
@@ -192,17 +192,18 @@ function toast(msg){
 function recompute(){
   const s=summary; if(!s||!s.expenses) return;
   const el=s.elapsed||1, dim=s.dim||30;
-  const S=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)).reduce((a,e)=>a+ (+e.monto||0),0);
+  const S=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)).reduce((a,e)=>a+(+e.monto||0),0);
+  const NOCAP=['Combustible','Agua','Viajes','Gastos personales','Ropa','Otros'];
+  const noCap={}; NOCAP.forEach(c=>noCap[c]=S(null,[c]));
   const g={comerL:S('Lautaro',['Comer afuera','Delivery']),comerV:S('Vanessa',['Comer afuera','Delivery']),
-    salidasL:S('Lautaro',['Salidas']),salidasV:S('Vanessa',['Salidas']),superT:S(null,['Súper']),
-    combL:S('Lautaro',['Combustible']),combV:S('Vanessa',['Combustible']),comprasL:S('Lautaro',['Compras']),
-    comprasV:S('Vanessa',['Compras']),servL:S('Lautaro',['Servicios/Personal']),servV:S('Vanessa',['Servicios/Personal']),
-    otrosL:S('Lautaro',['Otros']),otrosV:S('Vanessa',['Otros'])};
+    salidasL:S('Lautaro',['Salidas']),salidasV:S('Vanessa',['Salidas']),superT:S(null,['Súper']),noCap};
   s.gastos=g;
   const proj=v=>el?Math.round(v/el*dim):v;
-  const vL=g.comerL+g.salidasL+g.combL+g.comprasL+g.servL+g.otrosL;
-  const vV=g.comerV+g.salidasV+g.combV+g.comprasV+g.servV+g.otrosV;
-  s.savings={L:s.income.L-s.fijos.L-s.cuotas.L-proj(vL)-proj(g.superT*s.sL), V:s.income.V-s.fijos.V-s.cuotas.V-proj(vV)-proj(g.superT*s.sV)};
+  const NC=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)&&e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
+  const vc=['Comer afuera','Delivery','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Otros'];
+  const tL=(s.tarjetas&&s.tarjetas.L)||0, tV=(s.tarjetas&&s.tarjetas.V)||0;
+  s.savings={L:s.income.L-s.fijos.L-tL-proj(NC('Lautaro',vc))-proj(NC(null,['Súper'])*s.sL),
+             V:s.income.V-s.fijos.V-tV-proj(NC('Vanessa',vc))-proj(NC(null,['Súper'])*s.sV)};
   s.pct={L:s.income.L?s.savings.L/s.income.L:0, V:s.income.V?s.savings.V/s.income.V:0};
 }
 
@@ -270,16 +271,24 @@ function viewBoard(){
   +'<div class="card"><div class="eyebrow">Ahorro proyectado · '+labelYM(curYM)+'</div><div class="sgrid" style="margin-top:8px">'
   +'<div class="pill"><div class="who">Lautaro</div><div class="big '+pc(s.savings.L)+'">'+fmt(s.savings.L)+'</div><div class="sub '+pc(s.savings.L)+'">'+pctf(s.pct.L)+' del sueldo</div></div>'
   +'<div class="pill"><div class="who">Vanessa</div><div class="big '+pc(s.savings.V)+'">'+fmt(s.savings.V)+'</div><div class="sub '+pc(s.savings.V)+'">'+pctf(s.pct.V)+' del sueldo</div></div></div>'
-  +'<div class="hint">Proyección a fin de mes con el gasto actual. Día '+el+' de '+dim+'.</div></div>'
+  +'<div class="hint">Ahorro de caja: ingreso − fijos − tarjetas − gastos por fuera de tarjeta. Lo que va en tarjeta impacta cuando pagás el resumen. Día '+el+' de '+dim+'.</div></div>'
+  +tarjetasCard(s)
   +'<div class="card"><div class="ct">Comer afuera + delivery</div><div class="tag">Tope dinámico: '+pctf((s.config.pct_comer||8)/100)+' del ingreso de cada uno</div>'
   +meter('Lautaro',g.comerL,t.comerL,el,dim)+meter('Vanessa',g.comerV,t.comerV,el,dim)+'</div>'
   +'<div class="card"><div class="ct">Salidas</div>'+meter('Lautaro',g.salidasL,t.salidasL,el,dim)+meter('Vanessa',g.salidasV,t.salidasV,el,dim)+'</div>'
   +'<div class="card"><div class="ct">Súper del hogar</div>'+meter('Entre los dos',g.superT,t.super,el,dim)
   +'<div class="hint">Se reparte '+pctf(s.sL)+' / '+pctf(s.sV)+' · L '+fmt(g.superT*s.sL)+' · V '+fmt(g.superT*s.sV)+'</div></div>'
-  +'<div class="card"><div class="ct">Combustible y compras (sin tope)</div>'+meter('Combustible',g.combL+g.combV,0,el,dim,true)+meter('Compras',g.comprasL+g.comprasV,0,el,dim,true)+'</div>'
+  +'<div class="card"><div class="ct">Otros gastos del mes (sin tope)</div>'+noCapList(g.noCap)+'</div>'
   +fijosCards(s)
   +'<div class="card"><div class="ct">Últimos movimientos</div>'+list+'</div>';
 }
+function noCapList(m){ if(!m) return '<div class="empty" style="padding:14px">Sin gastos todavía.</div>'; const ks=Object.keys(m).filter(k=>m[k]>0); if(!ks.length) return '<div class="empty" style="padding:14px">Sin gastos en estas categorías todavía.</div>'; return ks.map(k=>'<div class="xrow"><span class="dot" style="background:'+cc(k)+'"></span><span class="d">'+k+'</span><span class="a">'+fmt(m[k])+'</span></div>').join(''); }
+function tarjetasCard(s){ const t=s.tarjetas||{L:0,V:0}; const tot=(t.L||0)+(t.V||0);
+  if(tot<=0) return '<div class="card"><div class="ct">Pago de tarjetas del mes</div><div class="hint">Cargá el total de cada resumen en la pestaña Mes. Es lo que efectivamente pagás e impacta directo en el ahorro.</div></div>';
+  return '<div class="card"><div class="ct">Pago de tarjetas del mes</div><div class="sgrid" style="margin-top:6px">'
+    +'<div class="pill"><div class="who">Lautaro</div><div class="big">'+fmt(t.L)+'</div></div>'
+    +'<div class="pill"><div class="who">Vanessa</div><div class="big">'+fmt(t.V)+'</div></div></div>'
+    +'<div class="hint">Total '+fmt(tot)+' · incluye cuotas, suscripciones y consumos del resumen.</div></div>'; }
 function fijoRow(f){
   return '<div class="frow'+(f.paid?' paid':'')+'"><button class="chk" data-pay="'+f.id+'" data-paid="'+(f.paid?1:0)+'">'+(f.paid?'✓':'')+'</button>'
    +'<span class="fd">'+f.nombre+'<small>'+f.quien+(f.dia?' · vence día '+f.dia:'')+'</small></span>'
@@ -295,13 +304,13 @@ function fijosCards(s){
 }
 
 function viewAdd(){
-  const cats=['Comer afuera','Delivery','Salidas','Súper','Combustible','Compras','Servicios/Personal','Otros'];
+  const cats=['Comer afuera','Delivery','Súper','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Otros'];
   const hoy=hoyISO();
   const today=(summary&&summary.expenses||[]).filter(e=>e.date===hoy).slice().reverse();
   const tl=today.length?today.map(e=>'<div class="xrow"><span class="dot" style="background:'+cc(e.cat)+'"></span><span class="d">'+e.cat+(e.nota?' · '+e.nota:'')+'<small>'+e.quien+' · '+e.medio+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">Nada cargado hoy.</div>';
   return '<div class="card"><div class="eyebrow">Nuevo gasto</div>'
   +'<div class="fg" style="margin-top:10px"><div class="amt-wrap"><input id="iAmt" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="0" value="'+draft.monto+'"></div></div>'
-  +'<div class="fg"><label class="lbl">Categoría</label><div class="catgrid" id="catG">'+cats.map(c=>'<button data-c="'+c+'" class="'+(draft.cat===c?'on':'')+'">'+c+'</button>').join('')+'</div></div>'
+  +'<div class="fg"><label class="lbl">Categoría</label><select id="iCat">'+cats.map(c=>'<option'+(draft.cat===c?' selected':'')+'>'+c+'</option>').join('')+'</select></div>'
   +'<div class="fg"><label class="lbl">Quién pagó</label><div class="seg" id="whoG">'+['Lautaro','Vanessa'].map(w=>'<button data-w="'+w+'" class="'+(draft.quien===w?'on':'')+'">'+w+'</button>').join('')+'</div></div>'
   +'<div class="grid2"><div class="fg"><label class="lbl">Medio</label><select id="iMedio">'+['Tarjeta','Débito','Efectivo','MercadoPago'].map(m=>'<option '+(draft.medio===m?'selected':'')+'>'+m+'</option>').join('')+'</select></div>'
   +'<div class="fg"><label class="lbl">Fecha</label><input id="iFecha" type="date" value="'+draft.fecha+'"></div></div>'
@@ -365,7 +374,7 @@ function viewCfg(){
     +'<select class="fe-tipo">'+opt(['Hogar','Personal'],f.tipo)+'</select></div></div>';
   return '<div class="card"><div class="eyebrow">Configuración de '+labelYM(curYM)+'</div>'
   +'<div class="hint">Actualizá lo que cambió este mes. Al guardar se aplican los ingresos, topes, reportes y los cambios en los fijos.</div>'
-  +'<div class="blk">Ingresos del mes</div>'+row('incomeL','Sueldo Lautaro')+row('incomeV','Sueldo Vanessa')
+  +'<div class="blk">Ingresos del mes</div>'+row('incomeL','Sueldo Lautaro')+row('incomeV','Sueldo Vanessa')+'<div class="blk">Tarjetas a pagar este mes</div>'+row('tarjetas_L','Tarjetas Lautaro','total del resumen')+row('tarjetas_V','Tarjetas Vanessa','total del resumen')
   +'<div class="blk">Topes variables (dinámicos)</div>'
   +row('pct_comer','Comer afuera (% ingreso)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% ingreso)','sugerido 5%',true)
   +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" data-key="cap_super" inputmode="decimal" value="'+fmtNum(v('cap_super'))+'"></div>'
@@ -391,7 +400,7 @@ function wire(){
     const m=parseNum(document.getElementById('iAmt').value);
     if(!m||m<=0){document.getElementById('iAmt').focus();return;}
     lastSave=Date.now();
-    draft.medio=document.getElementById('iMedio').value;draft.fecha=document.getElementById('iFecha').value;draft.nota=document.getElementById('iNota').value.trim();
+    draft.cat=document.getElementById('iCat').value;draft.medio=document.getElementById('iMedio').value;draft.fecha=document.getElementById('iFecha').value;draft.nota=document.getElementById('iNota').value.trim();
     post({action:'save',monto:m,cat:draft.cat,quien:draft.quien,medio:draft.medio,fecha:draft.fecha,nota:draft.nota});
     if(summary&&summary.expenses&&draft.fecha.slice(0,7)===curYM){
       summary.expenses.push({id:'t'+Date.now(),date:draft.fecha,quien:draft.quien,cat:draft.cat,medio:draft.medio,monto:m,nota:draft.nota});
