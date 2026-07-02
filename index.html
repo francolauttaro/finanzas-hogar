@@ -363,7 +363,7 @@ function viewCfg(){
   const row=(k,lab,hint,plain)=>{const val=plain?v(k):fmtNum(v(k));const oi=plain?'':' oninput="this.value=fmtNum(this.value)"';return '<div class="cfgrow"><span class="k">'+lab+(hint?'<small>'+hint+'</small>':'')+'</span><input class="ci" onfocus="this.select()"'+oi+' data-key="'+k+'" inputmode="decimal" value="'+val+'"></div>';};
   const sel=(k,lab,opts)=>{const cur=String(v(k));return '<div class="cfgrow"><span class="k">'+lab+'</span><select class="cs" data-key="'+k+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>';};
   const fd=(s&&s.fijosData)||{hogar:[],persL:[],persV:[]};
-  const allF=[].concat(fd.hogar||[],fd.persL||[],fd.persV||[]);
+  const allF=[].concat(fd.hogar||[],fd.persL||[],fd.persV||[]).sort((a,b)=>(a.id||0)-(b.id||0));
   const opt=(list,cur)=>list.map(o=>'<option'+(o===cur?' selected':'')+'>'+o+'</option>').join('');
   const fijoEdit=f=>'<div class="fijoedit" data-fid="'+f.id+'">'
     +'<input class="fe-nombre" onfocus="this.select()" value="'+(f.nombre||'')+'">'
