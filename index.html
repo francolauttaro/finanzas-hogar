@@ -213,8 +213,8 @@ function recompute(){
   const NC=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)&&e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
   const vc=['Comer afuera','Delivery','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Otros'];
   const tL=(s.tarjetas&&s.tarjetas.L)||0, tV=(s.tarjetas&&s.tarjetas.V)||0;
-  s.savings={L:s.income.L-s.fijos.L-tL-proj(NC('Lautaro',vc))-proj(NC(null,['Súper'])*s.sL),
-             V:s.income.V-s.fijos.V-tV-proj(NC('Vanessa',vc))-proj(NC(null,['Súper'])*s.sV)};
+  s.savings={L:s.income.L-s.fijos.L-tL-NC('Lautaro',vc)-NC(null,['Súper'])*s.sL,
+           V:s.income.V-s.fijos.V-tV-NC('Vanessa',vc)-NC(null,['Súper'])*s.sV};
   s.pct={L:s.income.L?s.savings.L/s.income.L:0, V:s.income.V?s.savings.V/s.income.V:0};
 }
 
