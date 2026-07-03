@@ -113,6 +113,14 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .legend .sw.g{background:var(--clay)}.legend .sw.a{background:var(--pine)}
 .pill .proj{font-size:11px;font-weight:600;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);line-height:1.3}
 .pill .proj b{font-weight:800}
+.bars .stack{width:100%;max-width:26px;display:flex;flex-direction:column;justify-content:flex-end;border-radius:6px 6px 0 0;overflow:hidden;min-height:3px}
+.bars .stack .seg-l{background:var(--pine);width:100%}
+.bars .stack .seg-v{background:var(--gold);width:100%}
+.legend .sw.pine{background:var(--pine)}.legend .sw.gold{background:var(--gold)}
+.compbar{display:flex;height:26px;border-radius:8px;overflow:hidden;background:#eee7da;margin:6px 0 2px}
+.compbar .cseg{height:100%}
+.c-fij{background:#5b6b66}.c-tar{background:var(--blue)}.c-var{background:var(--clay)}.c-aho{background:var(--pine)}
+.legend .sw.c-fij{background:#5b6b66}.legend .sw.c-tar{background:var(--blue)}.legend .sw.c-var{background:var(--clay)}.legend .sw.c-aho{background:var(--pine)}
 .catbar{margin:9px 0}
 .catbar .top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;margin-bottom:4px}
 .catbar .tr{height:8px;background:#eee7da;border-radius:99px;overflow:hidden}
@@ -196,7 +204,7 @@ function post(b){
   try{ fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',body:JSON.stringify(b)}); }catch(e){}
 }
 // ---- caché local: abre al instante con la última foto y refresca por detrás ----
-function cacheKey(ym){return 'fh_v1_'+ym;}
+function cacheKey(ym){return 'fh_v2_'+ym;}
 function saveCache(){ if(!summary||summary.error||loading) return; try{ localStorage.setItem(cacheKey(curYM), JSON.stringify({summary,dash,cuotas})); }catch(e){} }
 function loadCache(ym){ try{ const s=localStorage.getItem(cacheKey(ym)); return s?JSON.parse(s):null; }catch(e){ return null; } }
 async function fetchBundle(){
@@ -214,6 +222,16 @@ function toast(msg){
   clearTimeout(t._h); t._h=setTimeout(()=>t.className='',1600);
 }
 // recalcula gastos/ahorro en el cliente (para que el optimismo sea consistente)
+// Proyección de ahorro a fin de mes (calculada en el cliente; sirve de respaldo si el backend aún no la manda)
+function calcSavingsProj(s){
+  if(!s||!s.income||!s.expenses) return null;
+  const el=s.elapsed||1, dim=s.dim||30, proj=v=>el?Math.round(v/el*dim):v;
+  const NC=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)&&e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
+  const vc=['Comer afuera','Delivery','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Otros'];
+  const tL=(s.tarjetas&&s.tarjetas.L)||0, tV=(s.tarjetas&&s.tarjetas.V)||0;
+  return {L:s.income.L-s.fijos.L-tL-proj(NC('Lautaro',vc))-proj(NC(null,['Súper']))*s.sL,
+          V:s.income.V-s.fijos.V-tV-proj(NC('Vanessa',vc))-proj(NC(null,['Súper']))*s.sV};
+}
 function recompute(){
   const s=summary; if(!s||!s.expenses) return;
   const el=s.elapsed||1, dim=s.dim||30;
@@ -223,14 +241,12 @@ function recompute(){
   const g={comerL:S('Lautaro',['Comer afuera','Delivery']),comerV:S('Vanessa',['Comer afuera','Delivery']),
     salidasL:S('Lautaro',['Salidas']),salidasV:S('Vanessa',['Salidas']),superT:S(null,['Súper']),noCap};
   s.gastos=g;
-  const proj=v=>el?Math.round(v/el*dim):v;
   const NC=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)&&e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
   const vc=['Comer afuera','Delivery','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Otros'];
   const tL=(s.tarjetas&&s.tarjetas.L)||0, tV=(s.tarjetas&&s.tarjetas.V)||0;
   s.savings={L:s.income.L-s.fijos.L-tL-NC('Lautaro',vc)-NC(null,['Súper'])*s.sL,
            V:s.income.V-s.fijos.V-tV-NC('Vanessa',vc)-NC(null,['Súper'])*s.sV};
-  s.savingsProj={L:s.income.L-s.fijos.L-tL-proj(NC('Lautaro',vc))-proj(NC(null,['Súper']))*s.sL,
-           V:s.income.V-s.fijos.V-tV-proj(NC('Vanessa',vc))-proj(NC(null,['Súper']))*s.sV};
+  s.savingsProj=calcSavingsProj(s);
   s.pct={L:s.income.L?s.savings.L/s.income.L:0, V:s.income.V?s.savings.V/s.income.V:0};
 }
 
@@ -301,8 +317,9 @@ function viewBoard(){
   if(g.comerV>t.comerV)ban+='<div class="banner b-red">🔴 Vanessa pasó el tope de comer afuera ('+fmt(g.comerV)+' / '+fmt(t.comerV)+')</div>';
   if(g.superT>t.super)ban+='<div class="banner b-red">🔴 El súper pasó el tope del hogar</div>';
   const pc=v=>v>=0?'pos':'neg';
-  const projLine=w=>{ if(!s.isCur||!s.savingsProj||s.savingsProj[w]===undefined) return '';
-    const p=s.savingsProj[w]; return '<div class="proj">Proyectado fin de mes <b class="'+pc(p)+'">'+fmt(p)+'</b></div>'; };
+  const sProj=s.savingsProj||calcSavingsProj(s);
+  const projLine=w=>{ if(!s.isCur||!sProj||sProj[w]===undefined) return '';
+    const p=sProj[w]; return '<div class="proj">Proyectado fin de mes <b class="'+pc(p)+'">'+fmt(p)+'</b></div>'; };
   const ex=(s.expenses||[]).slice().reverse().slice(0,10);
   const list=ex.length?ex.map(e=>'<div class="xrow"><span class="dot" style="background:'+(cc(e.cat))+'"></span><span class="d">'+e.cat+'<small>'+e.quien+' · '+e.medio+(e.nota?' · '+e.nota:'')+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty">Sin gastos este mes. Tocá <b>Cargar</b>.</div>';
   return ban
@@ -360,10 +377,24 @@ function viewAdd(){
 function viewCuotas(){
   const c=cuotas;if(!c)return '<div class="card"><div class="spin"></div></div>';
   const fl=c.flujo||[];
+  const maxF=Math.max(1,...fl.map(f=>f.total));
+  const anyF=fl.some(f=>f.total>0);
+  const flujoBars=fl.map(f=>{const M=+f.ym.split('-')[1];const hL=Math.round(f.L/maxF*110),hV=Math.round(f.V/maxF*110);
+    return '<div class="col"><div class="val">'+(f.total>0?Math.round(f.total/1000)+'k':'')+'</div>'
+      +'<div class="stack" style="height:'+Math.max(3,hL+hV)+'px">'
+      +(f.V>0?'<div class="seg-v" style="height:'+hV+'px"></div>':'')
+      +(f.L>0?'<div class="seg-l" style="height:'+hL+'px"></div>':'')
+      +'</div><div class="lab">'+MONTHS[M-1].slice(0,3)+'</div></div>';}).join('');
+  const chartCard= anyF
+    ? '<div class="card"><div class="ct">Cuotas por mes · próximos 7 meses</div>'
+      +'<div class="legend"><span><i class="sw pine"></i>Lautaro</span><span><i class="sw gold"></i>Vanessa</span></div>'
+      +'<div class="bars">'+flujoBars+'</div></div>'
+    : '<div class="card"><div class="ct">Cuotas por mes</div><div class="empty" style="padding:20px">No tenés compras en cuotas activas. Cuando cargues una, vas a ver acá cómo se reparte el pago mes a mes.</div></div>';
   const flujoHTML=fl.map(f=>'<div class="xrow"><span class="d">'+labelYM(f.ym)+'<small>Lautaro '+fmt(f.L)+' · Vanessa '+fmt(f.V)+'</small></span><span class="a">'+fmt(f.total)+'</span></div>').join('');
   const items=(c.items||[]);
   const itemsHTML=items.length?items.map(i=>'<div class="xrow"><span class="d">'+i.desc+'<small>'+i.quien+' · cuota '+i.actual+'/'+i.n+'</small></span><span class="a">'+fmt(i.cuota)+'</span><button class="x" data-delc="'+i.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">No hay cuotas activas este mes.</div>';
-  return '<div class="card"><div class="eyebrow">Flujo de cuotas · próximos 7 meses</div><div style="margin-top:8px">'+flujoHTML+'</div></div>'
+  return chartCard
+  +'<div class="card"><div class="eyebrow">Flujo de cuotas · próximos 7 meses</div><div style="margin-top:8px">'+flujoHTML+'</div></div>'
   +'<div class="card"><div class="ct">Cuotas activas en '+labelYM(curYM)+'</div>'+itemsHTML+'</div>'
   +'<div class="card"><div class="ct">Cargar compra en cuotas</div>'
   +'<div class="fg"><label class="lbl">Qué compraste</label><input id="cDesc" placeholder="ej: Heladera Fravega" value="'+cdraft.descripcion+'"></div>'
@@ -389,6 +420,19 @@ function fijosDetalle(who){
     }
   });
   return out;
+}
+
+// Barra de composición: cómo se reparte el ingreso (fijos / tarjeta / variable no-tarjeta / ahorro)
+function compBar(ingreso,fijos,tarjeta,ahorro){
+  const ah=Math.max(ahorro,0);
+  const varNC=Math.max(0, ingreso-fijos-tarjeta-ah); // gasto por fuera de tarjeta que se comió el ingreso
+  const total=Math.max(1, fijos+tarjeta+varNC+ah);
+  const w=v=>(v/total*100).toFixed(1)+'%';
+  const seg=(v,cls,lab)=> v>0?'<div class="cseg '+cls+'" style="width:'+w(v)+'" title="'+lab+' '+fmt(v)+'"></div>':'';
+  return '<div class="compbar">'+seg(fijos,'c-fij','Fijos')+seg(tarjeta,'c-tar','Tarjeta')+seg(varNC,'c-var','Variable')+seg(ah,'c-aho','Ahorro')+'</div>'
+    +'<div class="legend" style="flex-wrap:wrap;gap:12px 16px">'
+    +'<span><i class="sw c-fij"></i>Fijos</span><span><i class="sw c-tar"></i>Tarjeta</span>'
+    +'<span><i class="sw c-var"></i>Variable</span><span><i class="sw c-aho"></i>Ahorro</span></div>';
 }
 
 function viewDash(){
@@ -422,6 +466,8 @@ function viewDash(){
   html+='<div class="sgrid" style="margin:8px 0">'
     +'<div class="pill"><div class="who">Ingreso</div><div class="big">'+fmt(ingreso)+'</div></div>'
     +'<div class="pill"><div class="who">Ahorro real</div><div class="big '+(ahorro>=0?'pos':'neg')+'">'+fmt(ahorro)+'</div></div></div>';
+  html+='<div class="blk">Cómo se reparte el ingreso</div>'+compBar(ingreso,fijos,tarjeta,ahorro)
+    +(ahorro<0?'<div class="mf" style="color:var(--clay);margin-top:4px">El gasto comprometido supera el ingreso este mes.</div>':'');
 
   // Gasto variable por categoría (de los movimientos del mes)
   const exps=(s.expenses||[]).filter(e=> isB?true:(who==='L'?e.quien==='Lautaro':e.quien==='Vanessa'));
@@ -558,7 +604,7 @@ function wire(){
         quien:fe.querySelector('.fe-quien').value,
         tipo:fe.querySelector('.fe-tipo').value });
     });
-    bCfg.textContent='Guardando…';post({action:'saveConfig',updates:up});toast('✓ Mes guardado');dash=null;reconciliar(1800);
+    bCfg.textContent='Guardando…';post({action:'saveConfig',updates:up,ym:curYM});toast('✓ Mes guardado');dash=null;reconciliar(1800);
   };
 }
 loadAll();
