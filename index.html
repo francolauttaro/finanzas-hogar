@@ -100,6 +100,19 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .bars .bar{width:100%;border-radius:6px 6px 0 0;background:var(--pine);min-height:3px;transition:height .4s}
 .bars .lab{font-size:10px;color:var(--muted);font-weight:600}
 .bars .val{font-size:9.5px;color:var(--ink2);font-weight:700}
+.gbars{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:14px}
+.gbars .gcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.gbars .pair{display:flex;align-items:flex-end;gap:3px;height:100%;width:100%;justify-content:center}
+.gbars .b{width:44%;max-width:15px;border-radius:5px 5px 0 0;min-height:2px;transition:height .4s}
+.gbars .b.g{background:var(--clay)}
+.gbars .b.a{background:var(--pine)}
+.gbars .lab{font-size:10px;color:var(--muted);font-weight:600}
+.legend{display:flex;gap:16px;font-size:11.5px;font-weight:600;color:var(--muted);margin:10px 0 2px}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+.legend .sw.g{background:var(--clay)}.legend .sw.a{background:var(--pine)}
+.pill .proj{font-size:11px;font-weight:600;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);line-height:1.3}
+.pill .proj b{font-weight:800}
 .catbar{margin:9px 0}
 .catbar .top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;margin-bottom:4px}
 .catbar .tr{height:8px;background:#eee7da;border-radius:99px;overflow:hidden}
@@ -166,6 +179,7 @@ let curYM=hoyISO().slice(0,7);
 let tab='board', summary=null, dash=null, cuotas=null, loading=false, netError=false, editStamp=0;
 let draft={monto:'',cat:'Comer afuera',quien:'Lautaro',medio:'Tarjeta',fecha:hoyISO(),nota:''};
 let cdraft={descripcion:'',quien:'Lautaro',cuota_mensual:'',n_cuotas:'',mes_inicio:curYM};
+let dashWho='Ambos'; // selector de Evolución: 'L' | 'V' | 'Ambos'
 
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
 function fmtNum(v){const s=String(v).replace(/[^\d]/g,'');return s?parseInt(s,10).toLocaleString('es-AR'):'';}
@@ -215,6 +229,8 @@ function recompute(){
   const tL=(s.tarjetas&&s.tarjetas.L)||0, tV=(s.tarjetas&&s.tarjetas.V)||0;
   s.savings={L:s.income.L-s.fijos.L-tL-NC('Lautaro',vc)-NC(null,['Súper'])*s.sL,
            V:s.income.V-s.fijos.V-tV-NC('Vanessa',vc)-NC(null,['Súper'])*s.sV};
+  s.savingsProj={L:s.income.L-s.fijos.L-tL-proj(NC('Lautaro',vc))-proj(NC(null,['Súper']))*s.sL,
+           V:s.income.V-s.fijos.V-tV-proj(NC('Vanessa',vc))-proj(NC(null,['Súper']))*s.sV};
   s.pct={L:s.income.L?s.savings.L/s.income.L:0, V:s.income.V?s.savings.V/s.income.V:0};
 }
 
@@ -285,13 +301,15 @@ function viewBoard(){
   if(g.comerV>t.comerV)ban+='<div class="banner b-red">🔴 Vanessa pasó el tope de comer afuera ('+fmt(g.comerV)+' / '+fmt(t.comerV)+')</div>';
   if(g.superT>t.super)ban+='<div class="banner b-red">🔴 El súper pasó el tope del hogar</div>';
   const pc=v=>v>=0?'pos':'neg';
+  const projLine=w=>{ if(!s.isCur||!s.savingsProj||s.savingsProj[w]===undefined) return '';
+    const p=s.savingsProj[w]; return '<div class="proj">Proyectado fin de mes <b class="'+pc(p)+'">'+fmt(p)+'</b></div>'; };
   const ex=(s.expenses||[]).slice().reverse().slice(0,10);
   const list=ex.length?ex.map(e=>'<div class="xrow"><span class="dot" style="background:'+(cc(e.cat))+'"></span><span class="d">'+e.cat+'<small>'+e.quien+' · '+e.medio+(e.nota?' · '+e.nota:'')+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty">Sin gastos este mes. Tocá <b>Cargar</b>.</div>';
   return ban
-  +'<div class="card"><div class="eyebrow">Ahorro proyectado · '+labelYM(curYM)+'</div><div class="sgrid" style="margin-top:8px">'
-  +'<div class="pill"><div class="who">Lautaro</div><div class="big '+pc(s.savings.L)+'">'+fmt(s.savings.L)+'</div><div class="sub '+pc(s.savings.L)+'">'+pctf(s.pct.L)+' del sueldo</div></div>'
-  +'<div class="pill"><div class="who">Vanessa</div><div class="big '+pc(s.savings.V)+'">'+fmt(s.savings.V)+'</div><div class="sub '+pc(s.savings.V)+'">'+pctf(s.pct.V)+' del sueldo</div></div></div>'
-  +'<div class="hint">Ahorro de caja: ingreso − fijos − tarjetas − gastos por fuera de tarjeta. Lo que va en tarjeta impacta cuando pagás el resumen. Día '+el+' de '+dim+'.</div></div>'
+  +'<div class="card"><div class="eyebrow">Ahorro real · '+labelYM(curYM)+'</div><div class="sgrid" style="margin-top:8px">'
+  +'<div class="pill"><div class="who">Lautaro</div><div class="big '+pc(s.savings.L)+'">'+fmt(s.savings.L)+'</div><div class="sub '+pc(s.savings.L)+'">'+pctf(s.pct.L)+' del sueldo</div>'+projLine('L')+'</div>'
+  +'<div class="pill"><div class="who">Vanessa</div><div class="big '+pc(s.savings.V)+'">'+fmt(s.savings.V)+'</div><div class="sub '+pc(s.savings.V)+'">'+pctf(s.pct.V)+' del sueldo</div>'+projLine('V')+'</div></div>'
+  +'<div class="hint">Ahorro de caja hasta hoy: ingreso − fijos − tarjetas − gastos por fuera de tarjeta. El <b>proyectado</b> estima el cierre del mes al ritmo de gasto actual. Día '+el+' de '+dim+'.</div></div>'
   +tarjetasCard(s)
   +'<div class="card"><div class="ct">Comer afuera + delivery</div><div class="tag">Tope dinámico: '+pctf((s.config.pct_comer||8)/100)+' del ingreso de cada uno</div>'
   +meter('Lautaro',g.comerL,t.comerL,el,dim)+meter('Vanessa',g.comerV,t.comerV,el,dim)+'</div>'
@@ -356,25 +374,92 @@ function viewCuotas(){
   +'<button class="btn" id="bCuota">Agregar a cuotas</button></div>';
 }
 
+// Fijos de una persona ('L'|'V'|'Ambos'), respetando el reparto sL/sV de los 'Ambos'
+function fijosDetalle(who){
+  const s=summary; if(!s||!s.fijosData) return [];
+  const fd=s.fijosData, sL=s.sL||0.7625, out=[];
+  [].concat(fd.hogar||[],fd.persL||[],fd.persV||[]).forEach(f=>{
+    if(f.quien==='Ambos'){
+      if(who==='Ambos') out.push({nombre:f.nombre,monto:f.monto,paid:f.paid});
+      else out.push({nombre:f.nombre+' (tu parte)',monto:Math.round(who==='L'?f.monto*sL:f.monto*(1-sL)),paid:f.paid});
+    } else if(who==='Ambos'){
+      out.push({nombre:f.nombre+' ('+f.quien+')',monto:f.monto,paid:f.paid});
+    } else if((who==='L'&&f.quien==='Lautaro')||(who==='V'&&f.quien==='Vanessa')){
+      out.push({nombre:f.nombre,monto:f.monto,paid:f.paid});
+    }
+  });
+  return out;
+}
+
 function viewDash(){
   const d=dash;if(!d)return '<div class="card"><div class="spin"></div></div>';
-  const s=d.series||[];
-  const maxV=Math.max(1,...s.map(x=>x.variable+x.cuotas));
-  const barsHTML=s.map(x=>{const h=Math.round((x.variable+x.cuotas)/maxV*110);const[Y,M]=x.mes.split('-');return '<div class="col"><div class="val">'+(x.variable+x.cuotas>0?Math.round((x.variable+x.cuotas)/1000)+'k':'')+'</div><div class="bar" style="height:'+h+'px"></div><div class="lab">'+MONTHS[+M-1].slice(0,3)+'</div></div>';}).join('');
-  const cur=s[s.length-1]||{ahorroReal:0,variable:0,cuotas:0};
-  const maxCat=Math.max(1,...(d.porCat||[]).map(c=>c.monto));
-  const catHTML=(d.porCat||[]).map(c=>'<div class="catbar"><div class="top"><span>'+c.cat+'</span><span>'+fmt(c.monto)+'</span></div><div class="tr"><div class="fl" style="width:'+(c.monto/maxCat*100)+'%;background:'+cc(c.cat)+'"></div></div></div>').join('')||'<div class="empty">Sin datos este mes.</div>';
-  const pAhorroEstim=d.ingresoTotal?d.ahorroEstim/d.ingresoTotal:0;
-  const pAhorroReal=d.ingresoTotal?cur.ahorroReal/d.ingresoTotal:0;
-  return '<div class="card"><div class="eyebrow">Ahorro del hogar · '+labelYM(curYM)+'</div><div class="sgrid" style="margin-top:8px">'
-  +'<div class="pill"><div class="who">Estimado (techo)</div><div class="big pos">'+fmt(d.ahorroEstim)+'</div><div class="sub pos">'+pctf(pAhorroEstim)+'</div></div>'
-  +'<div class="pill"><div class="who">Real proyectado</div><div class="big '+(cur.ahorroReal>=0?'pos':'neg')+'">'+fmt(cur.ahorroReal)+'</div><div class="sub '+(cur.ahorroReal>=0?'pos':'neg')+'">'+pctf(pAhorroReal)+'</div></div></div>'
-  +'<div class="hint">"Estimado" = ingreso − fijos − cuotas (antes de gasto variable). "Real" descuenta lo que efectivamente gastaron.</div></div>'
-  +'<div class="card"><div class="ct">Gasto total por mes (variable + cuotas)</div><div class="bars">'+barsHTML+'</div></div>'
-  +'<div class="card"><div class="ct">A dónde fue la plata · '+labelYM(curYM)+'</div>'+catHTML+'</div>'
-  +'<div class="card"><div class="ct">Reparto del gasto este mes</div>'
-  +'<div class="catbar"><div class="top"><span>Lautaro</span><span>'+fmt(d.porPersona.L)+'</span></div><div class="tr"><div class="fl" style="width:'+(d.porPersona.L/Math.max(1,d.porPersona.L+d.porPersona.V)*100)+'%;background:var(--pine)"></div></div></div>'
-  +'<div class="catbar"><div class="top"><span>Vanessa</span><span>'+fmt(d.porPersona.V)+'</span></div><div class="tr"><div class="fl" style="width:'+(d.porPersona.V/Math.max(1,d.porPersona.L+d.porPersona.V)*100)+'%;background:var(--gold)"></div></div></div></div>';
+  const s=summary||{};
+  const who=dashWho;                       // 'L' | 'V' | 'Ambos'
+  const isB=who==='Ambos';
+  const nombreW=isB?'Ambos':(who==='L'?'Lautaro':'Vanessa');
+  const pick=(l,v)=> isB?(l+v):(who==='L'?l:v);
+
+  // ---- Ahorro del hogar (se mantiene como contexto) ----
+  const serie=d.series||[];
+  const cur=serie[serie.length-1]||{ahorroReal:0};
+  const pEstim=d.ingresoTotal?d.ahorroEstim/d.ingresoTotal:0;
+  const pReal=d.ingresoTotal?cur.ahorroReal/d.ingresoTotal:0;
+  let html='<div class="card"><div class="eyebrow">Ahorro del hogar · '+labelYM(curYM)+'</div><div class="sgrid" style="margin-top:8px">'
+  +'<div class="pill"><div class="who">Estimado (techo)</div><div class="big pos">'+fmt(d.ahorroEstim)+'</div><div class="sub pos">'+pctf(pEstim)+'</div></div>'
+  +'<div class="pill"><div class="who">Real</div><div class="big '+(cur.ahorroReal>=0?'pos':'neg')+'">'+fmt(cur.ahorroReal)+'</div><div class="sub '+(cur.ahorroReal>=0?'pos':'neg')+'">'+pctf(pReal)+'</div></div></div>'
+  +'<div class="hint">"Estimado" = ingreso − fijos − cuotas (antes del gasto variable). "Real" descuenta lo que efectivamente gastaron.</div></div>';
+
+  // ---- Selector de persona ----
+  const segBtn=(val,lab)=>'<button data-dwho="'+val+'" class="'+(who===val?'on':'')+'">'+lab+'</button>';
+  html+='<div class="card"><div class="ct">Detalle individual · '+labelYM(curYM)+'</div>'
+    +'<div class="seg" style="margin-bottom:4px">'+segBtn('L','Lautaro')+segBtn('V','Vanessa')+segBtn('Ambos','Ambos')+'</div>';
+
+  // Ingreso / ahorro real de la persona
+  const ingreso=pick((s.income&&s.income.L)||0,(s.income&&s.income.V)||0);
+  const ahorro =pick((s.savings&&s.savings.L)||0,(s.savings&&s.savings.V)||0);
+  const tarjeta=pick((s.tarjetas&&s.tarjetas.L)||0,(s.tarjetas&&s.tarjetas.V)||0);
+  const fijos  =pick((s.fijos&&s.fijos.L)||0,(s.fijos&&s.fijos.V)||0);
+  html+='<div class="sgrid" style="margin:8px 0">'
+    +'<div class="pill"><div class="who">Ingreso</div><div class="big">'+fmt(ingreso)+'</div></div>'
+    +'<div class="pill"><div class="who">Ahorro real</div><div class="big '+(ahorro>=0?'pos':'neg')+'">'+fmt(ahorro)+'</div></div></div>';
+
+  // Gasto variable por categoría (de los movimientos del mes)
+  const exps=(s.expenses||[]).filter(e=> isB?true:(who==='L'?e.quien==='Lautaro':e.quien==='Vanessa'));
+  const catOrder=['Comer afuera','Delivery','Súper','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Otros'];
+  const byCat={}; exps.forEach(e=>{ byCat[e.cat]=(byCat[e.cat]||0)+(+e.monto||0); });
+  const catRows=catOrder.filter(c=>byCat[c]>0);
+  const varTot=catRows.reduce((a,c)=>a+byCat[c],0);
+  const maxC=Math.max(1,...catRows.map(c=>byCat[c]));
+  const catHTML=catRows.length? catRows.map(c=>'<div class="catbar"><div class="top"><span>'+c+'</span><span>'+fmt(byCat[c])+'</span></div><div class="tr"><div class="fl" style="width:'+(byCat[c]/maxC*100)+'%;background:'+cc(c)+'"></div></div></div>').join('') : '<div class="empty" style="padding:14px">Sin gasto variable este mes.</div>';
+  html+='<div class="blk">Gasto variable por categoría</div>'+catHTML+'<div class="ftot">Subtotal variable '+fmt(varTot)+'</div>';
+
+  // Fijos de la persona
+  const fList=fijosDetalle(who);
+  const fijHTML=fList.length? fList.map(f=>'<div class="xrow"><span class="d">'+f.nombre+(f.paid?' <small style="color:var(--pine);font-weight:700">✓ pago</small>':'')+'</span><span class="a">'+fmt(f.monto)+'</span></div>').join('') : '<div class="empty" style="padding:14px">Sin fijos.</div>';
+  html+='<div class="blk">Fijos</div>'+fijHTML+'<div class="ftot">Subtotal fijos '+fmt(fijos)+'</div>';
+
+  // Tarjeta a pagar
+  html+='<div class="blk">Tarjeta a pagar</div><div class="xrow"><span class="d">Total del resumen del mes</span><span class="a">'+fmt(tarjeta)+'</span></div>';
+  html+='</div>'; // cierra card detalle
+
+  // ---- Evolución 6 meses: gasto y ahorro (dos grupos de barras) ----
+  const sp=d.seriesP||[];
+  if(sp.length){
+    const gv=x=> isB?(x.gL+x.gV):(who==='L'?x.gL:x.gV);
+    const av=x=> isB?(x.aL+x.aV):(who==='L'?x.aL:x.aV);
+    const maxB=Math.max(1,...sp.map(x=>Math.max(gv(x),Math.max(av(x),0))));
+    const cols=sp.map(x=>{ const M=+x.mes.split('-')[1]; const g=gv(x),a=av(x);
+      const hg=Math.round(Math.max(0,g)/maxB*110), ha=Math.round(Math.max(0,a)/maxB*110);
+      return '<div class="gcol"><div class="pair">'
+        +'<div class="b g" style="height:'+hg+'px" title="Gasto '+fmt(g)+'"></div>'
+        +'<div class="b a" style="height:'+ha+'px" title="Ahorro '+fmt(a)+'"></div></div>'
+        +'<div class="lab">'+MONTHS[M-1].slice(0,3)+'</div></div>'; }).join('');
+    html+='<div class="card"><div class="ct">Últimos 6 meses · '+nombreW+'</div>'
+      +'<div class="legend"><span><i class="sw g"></i>Gasto</span><span><i class="sw a"></i>Ahorro</span></div>'
+      +'<div class="gbars">'+cols+'</div>'
+      +'<div class="hint">Gasto = lo gastado en el mes (todo medio). Ahorro = ingreso − fijos − tarjetas − gasto por fuera de tarjeta. Fijos, tarjetas e ingreso se toman con los valores actuales de configuración.</div></div>';
+  }
+  return html;
 }
 
 function viewCfg(){
@@ -411,6 +496,7 @@ function viewCfg(){
 }
 
 function wire(){
+  document.querySelectorAll('[data-dwho]').forEach(b=>b.onclick=()=>{dashWho=b.dataset.dwho;render();});
   document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{draft.cat=b.dataset.c;render();});
   document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{draft.quien=b.dataset.w;render();});
   document.querySelectorAll('[data-cw]').forEach(b=>b.onclick=()=>{cdraft.quien=b.dataset.cw;render();});
