@@ -130,6 +130,16 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .insight .it{color:var(--ink2)}
 .insight.warn .it{color:#9c4526;font-weight:600}
 .insight.good .it{color:var(--pine);font-weight:600}
+#gate{position:fixed;inset:0;z-index:100;background:var(--paper);display:flex;align-items:center;justify-content:center;padding:24px}
+.gatebox{width:100%;max-width:340px;text-align:center;display:flex;flex-direction:column;gap:12px}
+.gtitle{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-bottom:2px}.gtitle b{color:var(--pine)}
+.gsub{font-size:15px;color:var(--muted);font-weight:600;margin-bottom:8px}
+.gbtn{border:none;background:var(--pine);color:#fff;font-size:17px;font-weight:800;padding:16px;border-radius:14px;cursor:pointer;box-shadow:var(--sh)}
+.gbtn:active{transform:scale(.98)}
+.ginput{border:1.5px solid var(--line);background:var(--card);border-radius:14px;padding:15px;font-size:22px;text-align:center;letter-spacing:8px;font-weight:800;color:var(--ink)}
+.ginput:focus{outline:none;border-color:var(--pine)}
+.gerr{color:var(--clay);font-size:13px;font-weight:700;min-height:16px}
+.ghint{font-size:12.5px;color:var(--muted);margin-top:6px;cursor:pointer}
 .catbar{margin:9px 0}
 .catbar .top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;margin-bottom:4px}
 .catbar .tr{height:8px;background:#eee7da;border-radius:99px;overflow:hidden}
@@ -193,10 +203,14 @@ const SCRIPT_URL='https://script.google.com/macros/s/AKfycby-G1_5nb98oPPjkVMU8nA
 const MONTHS=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function hoyISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 let curYM=hoyISO().slice(0,7);
+let yo=localStorage.getItem('fh_yo')||'';           // identidad de este dispositivo: 'Lautaro' | 'Vanessa'
+let unlocked=false;                                  // desbloqueo por PIN (dura la sesión de la pestaña)
+const HOGAR_CATS=['Súper','Hogar','Agua','Empleada doméstica','Mascotas']; // sugerencia de "compartido"
+const OTRO=()=> yo==='Lautaro'?'Vanessa':'Lautaro';
 let tab='board', summary=null, dash=null, cuotas=null, loading=false, netError=false, editStamp=0;
-let draft={monto:'',cat:'Comer afuera',quien:'Lautaro',medio:'Tarjeta',fecha:hoyISO(),nota:''};
-let cdraft={descripcion:'',quien:'Lautaro',cuota_mensual:'',n_cuotas:'',mes_inicio:curYM};
-let dashWho='Ambos'; // selector de Evolución: 'L' | 'V' | 'Ambos'
+let draft={monto:'',cat:'Comer afuera',quien:(yo||'Lautaro'),medio:'Tarjeta',fecha:hoyISO(),nota:'',vis:'privado'};
+let cdraft={descripcion:'',quien:(yo||'Lautaro'),cuota_mensual:'',n_cuotas:'',mes_inicio:curYM,vis:'privado'};
+let dashWho='yo'; // selector de Evolución: 'yo' | 'hogar'
 
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
 function fmtNum(v){const s=String(v).replace(/[^\d]/g,'');return s?parseInt(s,10).toLocaleString('es-AR'):'';}
@@ -206,14 +220,15 @@ const labelYM=ym=>{const[y,m]=ym.split('-');return MONTHS[+m-1]+' '+y;};
 const CC={'Comer afuera':'var(--clay)','Delivery':'var(--gold)','Súper':'var(--pine)','Salidas':'#b5683a','Combustible':'var(--blue)','Agua':'#4a9ec7','Viajes':'#4a7c7c','Gastos personales':'#8b7fae','Ropa':'#b06a8f','Empleada doméstica':'#7c9885','Deportes':'#d98a3d','Vehículos':'#5f7a9b','Farmacia':'#c96a8a','Hogar':'#a08262','Mascotas':'#2e8b8b','Otros':'var(--muted)','Fijos hogar':'#5b6b66','Fijos personales':'#8b7fae'};
 
 function cc(c){return CC[c]||'var(--muted)';}
-async function api(p,timeoutMs){p._=Date.now();const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),timeoutMs||15000);try{const r=await fetch(SCRIPT_URL+'?'+new URLSearchParams(p),{cache:'no-store',signal:ctrl.signal});return await r.json();}finally{clearTimeout(t);}}
+async function api(p,timeoutMs){p._=Date.now();if(yo)p.yo=yo;const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),timeoutMs||15000);try{const r=await fetch(SCRIPT_URL+'?'+new URLSearchParams(p),{cache:'no-store',signal:ctrl.signal});return await r.json();}finally{clearTimeout(t);}}
 function post(b){
   editStamp=Date.now();  // hubo escritura local: un refresh viejo no debe pisarla
+  b.yo=yo;
   // fire-and-forget en no-cors: la escritura viaja igual y NUNCA cuelga la UI
   try{ fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',body:JSON.stringify(b)}); }catch(e){}
 }
 // ---- caché local: abre al instante con la última foto y refresca por detrás ----
-function cacheKey(ym){return 'fh_v2_'+ym;}
+function cacheKey(ym){return 'fh_v3_'+(yo||'x')+'_'+ym;}
 function saveCache(){ if(!summary||summary.error||loading) return; try{ localStorage.setItem(cacheKey(curYM), JSON.stringify({summary,dash,cuotas})); }catch(e){} }
 function loadCache(ym){ try{ const s=localStorage.getItem(cacheKey(ym)); return s?JSON.parse(s):null; }catch(e){ return null; } }
 async function fetchBundle(){
@@ -233,30 +248,19 @@ function toast(msg){
 // recalcula gastos/ahorro en el cliente (para que el optimismo sea consistente)
 // Proyección de ahorro a fin de mes (calculada en el cliente; sirve de respaldo si el backend aún no la manda)
 function calcSavingsProj(s){
-  if(!s||!s.income||!s.expenses) return null;
+  if(!s||!s.expenses||s.income===undefined) return null;
   const el=s.elapsed||1, dim=s.dim||30, proj=v=>el?Math.round(v/el*dim):v;
-  const NC=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)&&e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
-  const vc=['Comer afuera','Delivery','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Empleada doméstica','Deportes','Vehículos','Farmacia','Hogar','Mascotas','Otros'];
-  const tL=(s.tarjetas&&s.tarjetas.L)||0, tV=(s.tarjetas&&s.tarjetas.V)||0;
-  return {L:s.income.L-s.fijos.L-tL-proj(NC('Lautaro',vc))-proj(NC(null,['Súper']))*s.sL,
-          V:s.income.V-s.fijos.V-tV-proj(NC('Vanessa',vc))-proj(NC(null,['Súper']))*s.sV};
+  const miNC=s.expenses.filter(e=>e.quien===s.yo && e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
+  return s.income - s.miFijos - s.tarjeta - proj(miNC);
 }
 function recompute(){
   const s=summary; if(!s||!s.expenses) return;
-  const el=s.elapsed||1, dim=s.dim||30;
-  const S=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)).reduce((a,e)=>a+(+e.monto||0),0);
-  const NOCAP=['Combustible','Agua','Viajes','Gastos personales','Ropa','Empleada doméstica','Deportes','Vehículos','Farmacia','Hogar','Mascotas','Otros'];
-  const noCap={}; NOCAP.forEach(c=>noCap[c]=S(null,[c]));
-  const g={comerL:S('Lautaro',['Comer afuera','Delivery']),comerV:S('Vanessa',['Comer afuera','Delivery']),
-    salidasL:S('Lautaro',['Salidas']),salidasV:S('Vanessa',['Salidas']),superT:S(null,['Súper']),noCap};
-  s.gastos=g;
-  const NC=(who,cats)=>s.expenses.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)&&e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
-  const vc=['Comer afuera','Delivery','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Empleada doméstica','Deportes','Vehículos','Farmacia','Hogar','Mascotas','Otros'];
-  const tL=(s.tarjetas&&s.tarjetas.L)||0, tV=(s.tarjetas&&s.tarjetas.V)||0;
-  s.savings={L:s.income.L-s.fijos.L-tL-NC('Lautaro',vc)-NC(null,['Súper'])*s.sL,
-           V:s.income.V-s.fijos.V-tV-NC('Vanessa',vc)-NC(null,['Súper'])*s.sV};
-  s.savingsProj=calcSavingsProj(s);
-  s.pct={L:s.income.L?s.savings.L/s.income.L:0, V:s.income.V?s.savings.V/s.income.V:0};
+  const mias=s.expenses.filter(e=>e.quien===s.yo);
+  const miNC=mias.filter(e=>e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
+  s.savings = s.income - s.miFijos - s.tarjeta - miNC;
+  s.savingsProj = calcSavingsProj(s);
+  s.pct = s.income? s.savings/s.income : 0;
+  s.tarjetaMes = mias.filter(e=>e.medio==='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
 }
 
 async function loadAll(){
@@ -324,76 +328,72 @@ function kf(n){ n=Math.round(n||0); const a=Math.abs(n);
   if(a>=1000) return '$'+Math.round(n/1000)+'k'; return '$'+n; }
 function pctT(x){ return Math.round(x*100)+'%'; }
 
-// Gasto con tarjeta de crédito acumulado este mes (consumos nuevos, no el pago del resumen)
-function cardSpent(s){ const e=(s&&s.expenses)||[]; const f=w=>e.filter(x=>x.medio==='Tarjeta'&&(!w||x.quien===w)).reduce((a,x)=>a+(+x.monto||0),0);
-  return {L:f('Lautaro'),V:f('Vanessa'),total:f(null)}; }
+// Mi gasto con tarjeta de crédito acumulado este mes (consumos nuevos, no el pago del resumen)
+function cardSpent(s){ const yoq=s&&s.yo; return ((s&&s.expenses)||[]).filter(x=>x.medio==='Tarjeta'&&x.quien===yoq).reduce((a,x)=>a+(+x.monto||0),0); }
 
 function tarjetaMesCard(s){
-  const cm=cardSpent(s); const tope=+((s.config&&s.config.tope_tarjeta)||0);
-  const el=s.elapsed||1, dim=s.dim||30; const proj=(s.isCur&&el)?Math.round(cm.total/el*dim):cm.total;
-  if(cm.total<=0 && !tope) return '';
+  const cm=(s.tarjetaMes!==undefined? s.tarjetaMes : cardSpent(s));
+  const tope=+((s.topes&&s.topes.tarjeta)||0);
+  const el=s.elapsed||1, dim=s.dim||30; const proj=(s.isCur&&el)?Math.round(cm/el*dim):cm;
+  if(cm<=0 && !tope) return '';
   let bar;
-  if(tope>0){ const r=cm.total/tope; const cls=r>1?'m-over':r>=.75?'m-warn':'m-ok';
-    const foot = r>1? 'Se pasaron '+fmt(cm.total-tope) : ('Quedan '+fmt(tope-cm.total)+(s.isCur?' · al ritmo cierra en '+fmt(proj):''));
-    bar='<div class="meter '+cls+'" style="margin-top:8px"><div class="mh"><span class="ml">Consumo del mes</span><span class="mv">'+fmt(cm.total)+' / '+fmt(tope)+'</span></div><div class="track"><div class="fill" style="width:'+Math.min(r*100,100).toFixed(1)+'%"></div></div><div class="mf">'+foot+'</div></div>';
+  if(tope>0){ const r=cm/tope; const cls=r>1?'m-over':r>=.75?'m-warn':'m-ok';
+    const foot = r>1? 'Te pasaste '+fmt(cm-tope) : ('Quedan '+fmt(tope-cm)+(s.isCur?' · al ritmo cierra en '+fmt(proj):''));
+    bar='<div class="meter '+cls+'" style="margin-top:8px"><div class="mh"><span class="ml">Tu consumo del mes</span><span class="mv">'+fmt(cm)+' / '+fmt(tope)+'</span></div><div class="track"><div class="fill" style="width:'+Math.min(r*100,100).toFixed(1)+'%"></div></div><div class="mf">'+foot+'</div></div>';
   } else {
-    bar='<div class="meter m-ok" style="margin-top:8px"><div class="mh"><span class="ml">Consumo del mes</span><span class="mv">'+fmt(cm.total)+'</span></div><div class="mf" style="color:var(--muted)">'+(s.isCur?'Al ritmo actual cierra en '+fmt(proj)+' · ':'')+'definí un tope en la pestaña Mes</div></div>';
+    bar='<div class="meter m-ok" style="margin-top:8px"><div class="mh"><span class="ml">Tu consumo del mes</span><span class="mv">'+fmt(cm)+'</span></div><div class="mf" style="color:var(--muted)">'+(s.isCur?'Al ritmo actual cierra en '+fmt(proj)+' · ':'')+'definí tu tope en la pestaña Mes</div></div>';
   }
   return '<div class="card"><div class="ct">Gasto con tarjeta este mes</div>'
-    +'<div class="hint" style="margin-top:0">Consumos nuevos con tarjeta de crédito. <b>No</b> bajan el ahorro de este mes: se pagan en el resumen del mes que viene.</div>'
-    + bar
-    +'<div class="sgrid" style="margin-top:8px"><div class="pill"><div class="who">Lautaro</div><div class="big">'+fmt(cm.L)+'</div></div>'
-    +'<div class="pill"><div class="who">Vanessa</div><div class="big">'+fmt(cm.V)+'</div></div></div></div>';
+    +'<div class="hint" style="margin-top:0">Tus consumos nuevos con tarjeta. <b>No</b> bajan tu ahorro de este mes: se pagan en el resumen del mes que viene.</div>'
+    + bar +'</div>';
 }
 
-// ===== Motor de observaciones (reglas que interpretan los datos del mes) =====
+// ===== Motor de observaciones (interpretan tus datos + lo compartido) =====
 function buildInsights(s,d,c){
   if(!s||!s.isCur) return [];
   const out=[]; const add=(scope,level,text,prio)=>out.push({scope,level,text,prio:prio||0});
   const el=s.elapsed||1, dim=s.dim||30, frac=el/dim; const pj=v=>el?Math.round(v/el*dim):v;
-  const exp=s.expenses||[];
-  const IL=(s.income&&s.income.L)||0, IV=(s.income&&s.income.V)||0, ITOT=IL+IV;
-  const sc=(who,cats)=>exp.filter(e=>(!who||e.quien===who)&&cats.includes(e.cat)).reduce((a,e)=>a+(+e.monto||0),0);
-  const nom=w=>w==='L'?'Lautaro':'Vanessa'; const t=s.topes||{};
+  const yoq=s.yo, ing=s.income||0, t=s.topes||{};
+  const mias=(s.expenses||[]).filter(e=>e.quien===yoq);
+  const sc=cats=>mias.filter(e=>cats.includes(e.cat)).reduce((a,e)=>a+(+e.monto||0),0);
 
-  // Comer afuera + delivery vs tope, y delivery temprano
-  ['L','V'].forEach(w=>{ const who=nom(w), ing=w==='L'?IL:IV;
-    const comer=sc(who,['Comer afuera','Delivery']), tope=w==='L'?t.comerL:t.comerV;
-    if(tope>0&&comer>0&&frac>0.15){ const p=pj(comer);
-      if(comer>tope) add('board','warn',who+' ya superó el tope de comer afuera y delivery ('+kf(comer)+' de '+kf(tope)+').',95);
-      else if(p>tope*1.05) add('board','warn',who+' va '+kf(comer)+' en comer afuera y delivery; al ritmo del día '+el+' cerraría en ~'+kf(p)+', arriba del tope de '+kf(tope)+'.',80); }
-    const deli=sc(who,['Delivery']);
-    if(deli>0&&ing>0&&frac<0.55&&deli>ing*0.03) add('board','warn','Bastante delivery de '+who+' para el día '+el+': ya '+kf(deli)+' ('+pctT(deli/ing)+' de su ingreso).',70);
-  });
-  // Salidas vs tope
-  ['L','V'].forEach(w=>{ const who=nom(w); const sal=sc(who,['Salidas']); const tope=w==='L'?t.salidasL:t.salidasV;
-    if(tope>0&&sal>tope&&frac>0.2) add('board','warn',who+' pasó el tope de salidas ('+kf(sal)+' de '+kf(tope)+').',60); });
-  // Súper vs cap
-  const sup=sc(null,['Súper']); if(t.super>0&&sup>0&&frac>0.3){ const p=pj(sup);
-    if(sup>t.super) add('board','warn','El súper del hogar superó el tope ('+kf(sup)+' de '+kf(t.super)+').',65);
-    else if(p>t.super*1.05) add('board','info','El súper va camino a ~'+kf(p)+' a fin de mes (tope '+kf(t.super)+').',40); }
-  // Tarjeta acumulada
-  const card=cardSpent(s).total, topeCard=+((s.config&&s.config.tope_tarjeta)||0);
+  // Comer + delivery vs tu tope
+  const comer=sc(['Comer afuera','Delivery']);
+  if(t.comer>0&&comer>0&&frac>0.15){ const p=pj(comer);
+    if(comer>t.comer) add('board','warn','Ya superaste tu tope de comer afuera y delivery ('+kf(comer)+' de '+kf(t.comer)+').',95);
+    else if(p>t.comer*1.05) add('board','warn','Vas '+kf(comer)+' en comer afuera y delivery; al ritmo del día '+el+' cerrás en ~'+kf(p)+', arriba del tope de '+kf(t.comer)+'.',80); }
+  const deli=sc(['Delivery']);
+  if(deli>0&&ing>0&&frac<0.55&&deli>ing*0.03) add('board','warn','Bastante delivery para el día '+el+': ya '+kf(deli)+' ('+pctT(deli/ing)+' de tu ingreso).',70);
+  // Salidas
+  const sal=sc(['Salidas']);
+  if(t.salidas>0&&sal>t.salidas&&frac>0.2) add('board','warn','Pasaste tu tope de salidas ('+kf(sal)+' de '+kf(t.salidas)+').',60);
+  // Súper compartido vs tope del hogar
+  const superShared=(s.expenses||[]).filter(e=>e.vis==='compartido'&&e.cat==='Súper').reduce((a,e)=>a+(+e.monto||0),0);
+  if(t.super>0&&superShared>0&&frac>0.3){ const p=pj(superShared);
+    if(superShared>t.super) add('board','warn','El súper del hogar superó el tope ('+kf(superShared)+' de '+kf(t.super)+').',65);
+    else if(p>t.super*1.05) add('board','info','El súper del hogar va camino a ~'+kf(p)+' (tope '+kf(t.super)+').',40); }
+  // Tarjeta (tu consumo vs tu tope)
+  const card=cardSpent(s), topeCard=+(t.tarjeta||0);
   if(card>0){ const p=pj(card);
-    if(topeCard>0&&card>topeCard) add('board','warn','Ya gastaron '+kf(card)+' con tarjeta este mes, arriba del tope de '+kf(topeCard)+'. Se paga el mes que viene.',90);
-    else if(topeCard>0&&p>topeCard*1.05) add('board','warn','Al ritmo actual la tarjeta cerraría en ~'+kf(p)+', arriba del tope de '+kf(topeCard)+'. Es plata del mes que viene.',72);
-    else add('board','info','Llevan '+kf(card)+' de consumo con tarjeta'+(topeCard>0?' ('+pctT(card/topeCard)+' del tope)':'')+'. Se suma al resumen del mes que viene.',35); }
-  // Ahorro proyectado
-  const spj=s.savingsProj||calcSavingsProj(s);
-  if(spj){ const tot=spj.L+spj.V, pr=ITOT?tot/ITOT:0;
-    if(tot<0) add('board','warn','Proyectan cerrar el mes en rojo (~'+kf(tot)+'). Conviene frenar el gasto variable.',100);
-    else if(pr<0.1) add('board','warn','El ahorro proyectado del mes es bajo: ~'+kf(tot)+' ('+pctT(pr)+' del ingreso).',75);
-    else if(pr>=0.3) add('board','good','Buen ritmo: proyectan ahorrar ~'+kf(tot)+' ('+pctT(pr)+' del ingreso).',50); }
-  // Mes contra mes (necesita dashboard)
-  if(d&&d.seriesP&&d.seriesP.length>=2){ const cur=d.seriesP[d.seriesP.length-1], prev=d.seriesP[d.seriesP.length-2];
-    const gcur=pj(cur.gL+cur.gV), gprev=prev.gL+prev.gV;
+    if(topeCard>0&&card>topeCard) add('board','warn','Ya gastaste '+kf(card)+' con tarjeta este mes, arriba de tu tope de '+kf(topeCard)+'. Se paga el mes que viene.',90);
+    else if(topeCard>0&&p>topeCard*1.05) add('board','warn','Al ritmo actual tu tarjeta cierra en ~'+kf(p)+', arriba de tu tope de '+kf(topeCard)+'. Es plata del mes que viene.',72);
+    else add('board','info','Llevás '+kf(card)+' de consumo con tarjeta'+(topeCard>0?' ('+pctT(card/topeCard)+' de tu tope)':'')+'. Se suma al resumen del mes que viene.',35); }
+  // Ahorro proyectado (Yo)
+  const spj=(s.savingsProj!==undefined?s.savingsProj:calcSavingsProj(s));
+  if(spj!==null&&spj!==undefined){ const pr=ing?spj/ing:0;
+    if(spj<0) add('board','warn','Vas camino a cerrar el mes en rojo (~'+kf(spj)+'). Conviene frenar el gasto variable.',100);
+    else if(pr<0.1) add('board','warn','Tu ahorro proyectado es bajo: ~'+kf(spj)+' ('+pctT(pr)+' de tu ingreso).',75);
+    else if(pr>=0.3) add('board','good','Buen ritmo: proyectás ahorrar ~'+kf(spj)+' ('+pctT(pr)+' de tu ingreso).',50); }
+  // Mes contra mes (seriesYo)
+  if(d&&d.seriesYo&&d.seriesYo.length>=2){ const cur=d.seriesYo[d.seriesYo.length-1], prev=d.seriesYo[d.seriesYo.length-2];
+    const gcur=pj(cur.gasto), gprev=prev.gasto;
     if(gprev>0&&frac>=0.33){ const dlt=(gcur-gprev)/gprev;
-      if(dlt<-0.15) add('dash','good','Proyectan gastar ~'+pctT(-dlt)+' menos que el mes pasado. Vienen frenando.',55);
-      else if(dlt>1) add('dash','warn','Al ritmo actual van camino a gastar más del doble que el mes pasado.',62);
-      else if(dlt>0.2) add('dash','warn','Al ritmo actual van a gastar ~'+pctT(dlt)+' más que el mes pasado.',60); } }
-  // Cuotas (necesita cuotas)
+      if(dlt<-0.15) add('dash','good','Proyectás gastar ~'+pctT(-dlt)+' menos que el mes pasado. Venís frenando.',55);
+      else if(dlt>1) add('dash','warn','Al ritmo actual vas camino a gastar más del doble que el mes pasado.',62);
+      else if(dlt>0.2) add('dash','warn','Al ritmo actual vas a gastar ~'+pctT(dlt)+' más que el mes pasado.',60); } }
+  // Cuotas
   if(c&&c.flujo&&c.flujo.length>=2){ const th=c.flujo[0], nx=c.flujo[1];
-    if(th.total>0&&ITOT>0&&th.total/ITOT>0.15) add('cuotas','info','Las cuotas se llevan el '+pctT(th.total/ITOT)+' del ingreso este mes ('+kf(th.total)+').',45);
+    if(th.total>0&&ing>0&&th.total/ing>0.15) add('cuotas','info','Las cuotas que ves se llevan el '+pctT(th.total/ing)+' de tu ingreso este mes ('+kf(th.total)+').',45);
     if(th.total>0&&nx.total>th.total*1.2) add('cuotas','warn','El mes que viene las cuotas suben a '+kf(nx.total)+' (desde '+kf(th.total)+').',58);
     else if(th.total>0&&nx.total<th.total*0.8) add('cuotas','good','El mes que viene las cuotas aflojan: bajan a '+kf(nx.total)+'.',48); }
   // Estacionalidad (Argentina)
@@ -419,53 +419,46 @@ function insightsCard(scope){
 
 function viewBoard(){
   const s=summary;if(!s)return'';
-  const g=s.gastos,t=s.topes,el=s.elapsed,dim=s.dim;
-  let ban='';
-  if(g.comerL>t.comerL)ban+='<div class="banner b-red">🔴 Lautaro pasó el tope de comer afuera ('+fmt(g.comerL)+' / '+fmt(t.comerL)+')</div>';
-  if(g.comerV>t.comerV)ban+='<div class="banner b-red">🔴 Vanessa pasó el tope de comer afuera ('+fmt(g.comerV)+' / '+fmt(t.comerV)+')</div>';
-  if(g.superT>t.super)ban+='<div class="banner b-red">🔴 El súper pasó el tope del hogar</div>';
+  const el=s.elapsed,dim=s.dim;
+  const mias=(s.expenses||[]).filter(e=>e.quien===s.yo);
+  const sumc=cats=>mias.filter(e=>cats.includes(e.cat)).reduce((a,e)=>a+(+e.monto||0),0);
+  const comer=sumc(['Comer afuera','Delivery']), salidas=sumc(['Salidas']);
+  const superShared=(s.expenses||[]).filter(e=>e.vis==='compartido'&&e.cat==='Súper').reduce((a,e)=>a+(+e.monto||0),0);
+  const t=s.topes||{};
   const pc=v=>v>=0?'pos':'neg';
-  const sProj=s.savingsProj||calcSavingsProj(s);
-  const projLine=w=>{ if(!s.isCur||!sProj||sProj[w]===undefined) return '';
-    const p=sProj[w]; return '<div class="proj">Proyectado fin de mes <b class="'+pc(p)+'">'+fmt(p)+'</b></div>'; };
-  const ex=(s.expenses||[]).slice().reverse().slice(0,10);
-  const list=ex.length?ex.map(e=>'<div class="xrow"><span class="dot" style="background:'+(cc(e.cat))+'"></span><span class="d">'+e.cat+'<small>'+e.quien+' · '+e.medio+(e.nota?' · '+e.nota:'')+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty">Sin gastos este mes. Tocá <b>Cargar</b>.</div>';
-  return ban
-  +insightsCard('board')
-  +'<div class="card"><div class="eyebrow">Ahorro real · '+labelYM(curYM)+'</div><div class="sgrid" style="margin-top:8px">'
-  +'<div class="pill"><div class="who">Lautaro</div><div class="big '+pc(s.savings.L)+'">'+fmt(s.savings.L)+'</div><div class="sub '+pc(s.savings.L)+'">'+pctf(s.pct.L)+' del sueldo</div>'+projLine('L')+'</div>'
-  +'<div class="pill"><div class="who">Vanessa</div><div class="big '+pc(s.savings.V)+'">'+fmt(s.savings.V)+'</div><div class="sub '+pc(s.savings.V)+'">'+pctf(s.pct.V)+' del sueldo</div>'+projLine('V')+'</div></div>'
-  +'<div class="hint">Ahorro de caja hasta hoy: ingreso − fijos − tarjetas − gastos por fuera de tarjeta. El <b>proyectado</b> estima el cierre del mes al ritmo de gasto actual. Día '+el+' de '+dim+'.</div></div>'
+  const sProj=(s.savingsProj!==undefined? s.savingsProj : calcSavingsProj(s));
+  const projLine=(s.isCur&&sProj!==undefined&&sProj!==null)?'<div class="proj">Proyectado fin de mes <b class="'+pc(sProj)+'">'+fmt(sProj)+'</b></div>':'';
+  const exAll=(s.expenses||[]).slice().reverse().slice(0,12);
+  const list=exAll.length?exAll.map(e=>'<div class="xrow"><span class="dot" style="background:'+(cc(e.cat))+'"></span><span class="d">'+e.cat+'<small>'+(e.quien===s.yo?'vos':e.quien)+' · '+e.medio+(e.vis==='compartido'?' · 👥':'')+(e.nota?' · '+e.nota:'')+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+'</small></span><span class="a">'+fmt(e.monto)+'</span>'+(e.quien===s.yo?'<button class="x" data-del="'+e.id+'">×</button>':'')+'</div>').join(''):'<div class="empty">Sin gastos este mes. Tocá <b>Cargar</b>.</div>';
+  return insightsCard('board')
+  +'<div class="card"><div class="eyebrow">Tu ahorro · '+labelYM(curYM)+'</div>'
+  +'<div class="big '+pc(s.savings)+'" style="font-size:32px;margin-top:6px">'+fmt(s.savings)+'</div>'
+  +'<div class="sub '+pc(s.savings)+'">'+pctf(s.pct)+' de tu ingreso</div>'+projLine
+  +'<div class="hint" style="margin-top:8px">Ahorro de caja hasta hoy: tu ingreso − tus fijos − tu tarjeta − lo que gastaste por fuera de tarjeta. El <b>proyectado</b> estima el cierre al ritmo actual. Día '+el+' de '+dim+'.</div></div>'
   +tarjetasCard(s)
   +tarjetaMesCard(s)
-  +'<div class="card"><div class="ct">Comer afuera + delivery</div><div class="tag">Tope dinámico: '+pctf((s.config.pct_comer||8)/100)+' del ingreso de cada uno</div>'
-  +meter('Lautaro',g.comerL,t.comerL,el,dim)+meter('Vanessa',g.comerV,t.comerV,el,dim)+'</div>'
-  +'<div class="card"><div class="ct">Salidas</div>'+meter('Lautaro',g.salidasL,t.salidasL,el,dim)+meter('Vanessa',g.salidasV,t.salidasV,el,dim)+'</div>'
-  +'<div class="card"><div class="ct">Súper del hogar</div>'+meter('Entre los dos',g.superT,t.super,el,dim)
-  +'<div class="hint">Se reparte '+pctf(s.sL)+' / '+pctf(s.sV)+' · L '+fmt(g.superT*s.sL)+' · V '+fmt(g.superT*s.sV)+'</div></div>'
-  +'<div class="card"><div class="ct">Otros gastos del mes (sin tope)</div>'+noCapList(g.noCap)+'</div>'
+  +'<div class="card"><div class="ct">Comer afuera + delivery</div><div class="tag">Tu tope: '+pctf((s.config.pct_comer||8)/100)+' de tu ingreso</div>'+meter('Tu gasto',comer,t.comer,el,dim)+'</div>'
+  +'<div class="card"><div class="ct">Salidas</div><div class="tag">Tu tope: '+pctf((s.config.pct_salidas||5)/100)+' de tu ingreso</div>'+meter('Tu gasto',salidas,t.salidas,el,dim)+'</div>'
+  +((superShared>0||t.super>0)?'<div class="card"><div class="ct">Súper del hogar</div>'+meter('Compartido entre los dos',superShared,t.super,el,dim)+'<div class="hint">Suma los gastos de súper marcados <b>compartidos</b> por los dos, contra el tope del hogar.</div></div>':'')
   +fijosCards(s)
-  +'<div class="card"><div class="ct">Últimos movimientos</div>'+list+'</div>';
+  +'<div class="card"><div class="ct">Últimos movimientos</div><div class="hint" style="margin-top:0">Los tuyos y los compartidos (👥). Lo privado del otro no aparece.</div>'+list+'</div>';
 }
 function noCapList(m){ if(!m) return '<div class="empty" style="padding:14px">Sin gastos todavía.</div>'; const ks=Object.keys(m).filter(k=>m[k]>0); if(!ks.length) return '<div class="empty" style="padding:14px">Sin gastos en estas categorías todavía.</div>'; return ks.map(k=>'<div class="xrow"><span class="dot" style="background:'+cc(k)+'"></span><span class="d">'+k+'</span><span class="a">'+fmt(m[k])+'</span></div>').join(''); }
-function tarjetasCard(s){ const t=s.tarjetas||{L:0,V:0}; const tot=(t.L||0)+(t.V||0);
-  if(tot<=0) return '<div class="card"><div class="ct">Pago de tarjetas del mes</div><div class="hint">Cargá el total de cada resumen en la pestaña Mes. Es lo que efectivamente pagás e impacta directo en el ahorro.</div></div>';
-  return '<div class="card"><div class="ct">Pago de tarjetas del mes</div><div class="sgrid" style="margin-top:6px">'
-    +'<div class="pill"><div class="who">Lautaro</div><div class="big">'+fmt(t.L)+'</div></div>'
-    +'<div class="pill"><div class="who">Vanessa</div><div class="big">'+fmt(t.V)+'</div></div></div>'
-    +'<div class="hint">Total '+fmt(tot)+' · incluye cuotas, suscripciones y consumos del resumen.</div></div>'; }
+function tarjetasCard(s){ const t=s.tarjeta||0;
+  if(t<=0) return '<div class="card"><div class="ct">Tu pago de tarjeta del mes</div><div class="hint">Cargá el total de tu resumen en la pestaña Mes. Es lo que efectivamente pagás e impacta directo en tu ahorro.</div></div>';
+  return '<div class="card"><div class="ct">Tu pago de tarjeta del mes</div><div class="big" style="margin-top:6px">'+fmt(t)+'</div>'
+    +'<div class="hint">Incluye cuotas, suscripciones y consumos de tu resumen.</div></div>'; }
 function fijoRow(f){
   return '<div class="frow'+(f.paid?' paid':'')+'"><button class="chk" data-pay="'+f.id+'" data-paid="'+(f.paid?1:0)+'">'+(f.paid?'✓':'')+'</button>'
    +'<span class="fd">'+f.nombre+'<small>'+f.quien+(f.dia?' · vence día '+f.dia:'')+'</small></span>'
    +'<span class="fa">'+fmt(f.monto)+'</span></div>';
 }
 function fijosCards(s){
-  const fd=s.fijosData; if(!fd) return '';
   const blk=(titulo,arr)=>{ if(!arr||!arr.length) return '';
     const tot=arr.reduce((a,f)=>a+f.monto,0), pag=arr.filter(f=>f.paid).reduce((a,f)=>a+f.monto,0);
     return '<div class="card"><div class="ct">'+titulo+'</div>'+arr.map(fijoRow).join('')
       +'<div class="ftot">Pagado '+fmt(pag)+' · Pendiente '+fmt(tot-pag)+'</div></div>'; };
-  return blk('Gastos del hogar', fd.hogar) + blk('Fijos personales', [].concat(fd.persL||[],fd.persV||[]));
+  return blk('Gastos del hogar', s.fijosHogar) + blk('Tus fijos personales', s.misPersonales);
 }
 
 function viewAdd(){
@@ -476,7 +469,7 @@ function viewAdd(){
   return '<div class="card"><div class="eyebrow">Nuevo gasto</div>'
   +'<div class="fg" style="margin-top:10px"><div class="amt-wrap"><input id="iAmt" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="0" value="'+draft.monto+'"></div></div>'
   +'<div class="fg"><label class="lbl">Categoría</label><select id="iCat">'+cats.map(c=>'<option'+(draft.cat===c?' selected':'')+'>'+c+'</option>').join('')+'</select></div>'
-  +'<div class="fg"><label class="lbl">Quién pagó</label><div class="seg" id="whoG">'+['Lautaro','Vanessa'].map(w=>'<button data-w="'+w+'" class="'+(draft.quien===w?'on':'')+'">'+w+'</button>').join('')+'</div></div>'
+  +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="visG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-vis="'+o[0]+'" class="'+(draft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div><div class="mf" style="margin-top:6px">Privado: solo lo ves vos. Compartido: lo ve '+OTRO()+' y suma al Hogar.</div></div>'
   +'<div class="grid2"><div class="fg"><label class="lbl">Medio</label><select id="iMedio">'+['Tarjeta','Débito','Efectivo','MercadoPago'].map(m=>'<option '+(draft.medio===m?'selected':'')+'>'+m+'</option>').join('')+'</select></div>'
   +'<div class="fg"><label class="lbl">Fecha</label><input id="iFecha" type="date" value="'+draft.fecha+'"></div></div>'
   +'<div class="fg"><label class="lbl">Detalle (opcional)</label><input id="iNota" placeholder="ej: Coto, PedidosYa, café…" value="'+draft.nota+'"></div>'
@@ -489,46 +482,41 @@ function viewCuotas(){
   const fl=c.flujo||[];
   const maxF=Math.max(1,...fl.map(f=>f.total));
   const anyF=fl.some(f=>f.total>0);
-  const flujoBars=fl.map(f=>{const M=+f.ym.split('-')[1];const hL=Math.round(f.L/maxF*110),hV=Math.round(f.V/maxF*110);
+  const flujoBars=fl.map(f=>{const M=+f.ym.split('-')[1];const hP=Math.round(f.priv/maxF*110),hC=Math.round(f.comp/maxF*110);
     return '<div class="col"><div class="val">'+(f.total>0?Math.round(f.total/1000)+'k':'')+'</div>'
-      +'<div class="stack" style="height:'+Math.max(3,hL+hV)+'px">'
-      +(f.V>0?'<div class="seg-v" style="height:'+hV+'px"></div>':'')
-      +(f.L>0?'<div class="seg-l" style="height:'+hL+'px"></div>':'')
+      +'<div class="stack" style="height:'+Math.max(3,hP+hC)+'px">'
+      +(f.comp>0?'<div class="seg-v" style="height:'+hC+'px"></div>':'')
+      +(f.priv>0?'<div class="seg-l" style="height:'+hP+'px"></div>':'')
       +'</div><div class="lab">'+MONTHS[M-1].slice(0,3)+'</div></div>';}).join('');
   const chartCard= anyF
     ? '<div class="card"><div class="ct">Cuotas por mes · próximos 7 meses</div>'
-      +'<div class="legend"><span><i class="sw pine"></i>Lautaro</span><span><i class="sw gold"></i>Vanessa</span></div>'
+      +'<div class="legend"><span><i class="sw pine"></i>Mías</span><span><i class="sw gold"></i>Compartidas</span></div>'
       +'<div class="bars">'+flujoBars+'</div></div>'
-    : '<div class="card"><div class="ct">Cuotas por mes</div><div class="empty" style="padding:20px">No tenés compras en cuotas activas. Cuando cargues una, vas a ver acá cómo se reparte el pago mes a mes.</div></div>';
-  const flujoHTML=fl.map(f=>'<div class="xrow"><span class="d">'+labelYM(f.ym)+'<small>Lautaro '+fmt(f.L)+' · Vanessa '+fmt(f.V)+'</small></span><span class="a">'+fmt(f.total)+'</span></div>').join('');
+    : '<div class="card"><div class="ct">Cuotas por mes</div><div class="empty" style="padding:20px">No hay cuotas activas que puedas ver. Cuando cargues una (o el otro marque una compartida), vas a ver acá cómo se reparte el pago mes a mes.</div></div>';
+  const flujoHTML=fl.map(f=>'<div class="xrow"><span class="d">'+labelYM(f.ym)+'<small>Mías '+fmt(f.priv)+' · Compartidas '+fmt(f.comp)+'</small></span><span class="a">'+fmt(f.total)+'</span></div>').join('');
   const items=(c.items||[]);
-  const itemsHTML=items.length?items.map(i=>'<div class="xrow"><span class="d">'+i.desc+'<small>'+i.quien+' · cuota '+i.actual+'/'+i.n+'</small></span><span class="a">'+fmt(i.cuota)+'</span><button class="x" data-delc="'+i.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">No hay cuotas activas este mes.</div>';
+  const itemsHTML=items.length?items.map(i=>'<div class="xrow"><span class="d">'+i.desc+'<small>'+(i.vis==='compartido'?'👥 compartida · ':'')+(i.quien===yo?'vos':i.quien)+' · cuota '+i.actual+'/'+i.n+'</small></span><span class="a">'+fmt(i.cuota)+'</span>'+(i.quien===yo?'<button class="x" data-delc="'+i.id+'">×</button>':'')+'</div>').join(''):'<div class="empty" style="padding:18px">No hay cuotas activas este mes.</div>';
   return insightsCard('cuotas')
   +chartCard
   +'<div class="card"><div class="eyebrow">Flujo de cuotas · próximos 7 meses</div><div style="margin-top:8px">'+flujoHTML+'</div></div>'
   +'<div class="card"><div class="ct">Cuotas activas en '+labelYM(curYM)+'</div>'+itemsHTML+'</div>'
   +'<div class="card"><div class="ct">Cargar compra en cuotas</div>'
   +'<div class="fg"><label class="lbl">Qué compraste</label><input id="cDesc" placeholder="ej: Heladera Fravega" value="'+cdraft.descripcion+'"></div>'
-  +'<div class="fg"><label class="lbl">Quién</label><div class="seg" id="cWho">'+['Lautaro','Vanessa'].map(w=>'<button data-cw="'+w+'" class="'+(cdraft.quien===w?'on':'')+'">'+w+'</button>').join('')+'</div></div>'
+  +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="cVisG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-cvis="'+o[0]+'" class="'+(cdraft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div></div>'
   +'<div class="grid2"><div class="fg"><label class="lbl">Cuota mensual</label><input id="cCuota" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="$" value="'+fmtNum(cdraft.cuota_mensual)+'"></div>'
   +'<div class="fg"><label class="lbl"># de cuotas</label><input id="cN" onfocus="this.select()" inputmode="numeric" placeholder="6" value="'+cdraft.n_cuotas+'"></div></div>'
   +'<div class="fg"><label class="lbl">Mes de la 1ª cuota</label><input id="cIni" type="month" value="'+cdraft.mes_inicio+'"></div>'
   +'<button class="btn" id="bCuota">Agregar a cuotas</button></div>';
 }
 
-// Fijos de una persona ('L'|'V'|'Ambos'), respetando el reparto sL/sV de los 'Ambos'
-function fijosDetalle(who){
-  const s=summary; if(!s||!s.fijosData) return [];
-  const fd=s.fijosData, sL=s.sL||0.7625, out=[];
-  [].concat(fd.hogar||[],fd.persL||[],fd.persV||[]).forEach(f=>{
-    if(f.quien==='Ambos'){
-      if(who==='Ambos') out.push({nombre:f.nombre,monto:f.monto,paid:f.paid});
-      else out.push({nombre:f.nombre+' (tu parte)',monto:Math.round(who==='L'?f.monto*sL:f.monto*(1-sL)),paid:f.paid});
-    } else if(who==='Ambos'){
-      out.push({nombre:f.nombre+' ('+f.quien+')',monto:f.monto,paid:f.paid});
-    } else if((who==='L'&&f.quien==='Lautaro')||(who==='V'&&f.quien==='Vanessa')){
-      out.push({nombre:f.nombre,monto:f.monto,paid:f.paid});
-    }
+// Mis fijos: personales + mi parte de los del hogar (Ambos → *miShare; quien===yo → full)
+function fijosDetalleYo(){
+  const s=summary; if(!s) return [];
+  const out=(s.misPersonales||[]).map(f=>({nombre:f.nombre,monto:f.monto,paid:f.paid}));
+  (s.fijosHogar||[]).forEach(f=>{ let m;
+    if(f.quien==='Ambos') m=Math.round(f.monto*(s.miShare||0));
+    else if(f.quien===s.yo) m=f.monto; else m=0;
+    if(m>0) out.push({nombre:f.nombre+(f.quien==='Ambos'?' (tu parte)':''),monto:m,paid:f.paid});
   });
   return out;
 }
@@ -552,85 +540,85 @@ function compBar(ingreso,fijos,tarjeta,ahorro){
 function viewDash(){
   const d=dash;if(!d)return '<div class="card"><div class="spin"></div></div>';
   const s=summary||{};
-  const who=dashWho;                       // 'L' | 'V' | 'Ambos'
-  const isB=who==='Ambos';
-  const nombreW=isB?'Ambos':(who==='L'?'Lautaro':'Vanessa');
-  const pick=(l,v)=> isB?(l+v):(who==='L'?l:v);
-
-  // ---- Ahorro del hogar (se mantiene como contexto) ----
-  const serie=d.series||[];
-  const cur=serie[serie.length-1]||{ahorroReal:0};
-  const pEstim=d.ingresoTotal?d.ahorroEstim/d.ingresoTotal:0;
-  const pReal=d.ingresoTotal?cur.ahorroReal/d.ingresoTotal:0;
-  let html=insightsCard('dash')+'<div class="card"><div class="eyebrow">Ahorro del hogar · '+labelYM(curYM)+'</div><div class="sgrid" style="margin-top:8px">'
-  +'<div class="pill"><div class="who">Estimado (techo)</div><div class="big pos">'+fmt(d.ahorroEstim)+'</div><div class="sub pos">'+pctf(pEstim)+'</div></div>'
-  +'<div class="pill"><div class="who">Real</div><div class="big '+(cur.ahorroReal>=0?'pos':'neg')+'">'+fmt(cur.ahorroReal)+'</div><div class="sub '+(cur.ahorroReal>=0?'pos':'neg')+'">'+pctf(pReal)+'</div></div></div>'
-  +'<div class="hint">"Estimado" = ingreso − fijos − cuotas (antes del gasto variable). "Real" descuenta lo que efectivamente gastaron.</div></div>';
-
-  // ---- Selector de persona ----
+  const who=dashWho; // 'yo' | 'hogar'
   const segBtn=(val,lab)=>'<button data-dwho="'+val+'" class="'+(who===val?'on':'')+'">'+lab+'</button>';
-  html+='<div class="card"><div class="ct">Detalle individual · '+labelYM(curYM)+'</div>'
-    +'<div class="seg" style="margin-bottom:4px">'+segBtn('L','Lautaro')+segBtn('V','Vanessa')+segBtn('Ambos','Ambos')+'</div>';
+  let html=insightsCard('dash')
+    +'<div class="card"><div class="ct">Evolución · '+labelYM(curYM)+'</div>'
+    +'<div class="seg" style="margin-bottom:4px">'+segBtn('yo','Yo')+segBtn('hogar','Hogar')+'</div>';
 
-  // Ingreso / ahorro real de la persona
-  const ingreso=pick((s.income&&s.income.L)||0,(s.income&&s.income.V)||0);
-  const ahorro =pick((s.savings&&s.savings.L)||0,(s.savings&&s.savings.V)||0);
-  const tarjeta=pick((s.tarjetas&&s.tarjetas.L)||0,(s.tarjetas&&s.tarjetas.V)||0);
-  const fijos  =pick((s.fijos&&s.fijos.L)||0,(s.fijos&&s.fijos.V)||0);
-  const pctI=v=>ingreso>0?' <small class="pctpill">'+(v/ingreso*100).toFixed(1)+'%</small>':'';
-  html+='<div class="sgrid" style="margin:8px 0">'
-    +'<div class="pill"><div class="who">Ingreso</div><div class="big">'+fmt(ingreso)+'</div></div>'
-    +'<div class="pill"><div class="who">Ahorro real</div><div class="big '+(ahorro>=0?'pos':'neg')+'">'+fmt(ahorro)+'</div></div></div>';
-  html+='<div class="blk">Cómo se reparte el ingreso</div>'+compBar(ingreso,fijos,tarjeta,ahorro)
-    +(ahorro<0?'<div class="mf" style="color:var(--clay);margin-top:4px">El gasto comprometido supera el ingreso este mes.</div>':'');
-
-  // Gasto variable por categoría (de los movimientos del mes)
-  const exps=(s.expenses||[]).filter(e=> isB?true:(who==='L'?e.quien==='Lautaro':e.quien==='Vanessa'));
-  const catOrder=['Comer afuera','Delivery','Súper','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Empleada doméstica','Deportes','Vehículos','Farmacia','Hogar','Mascotas','Otros'];
-  const byCat={}; exps.forEach(e=>{ byCat[e.cat]=(byCat[e.cat]||0)+(+e.monto||0); });
-  const catRows=catOrder.filter(c=>byCat[c]>0);
-  const varTot=catRows.reduce((a,c)=>a+byCat[c],0);
-  const maxC=Math.max(1,...catRows.map(c=>byCat[c]));
-  const catHTML=catRows.length? catRows.map(c=>'<div class="catbar"><div class="top"><span>'+c+'</span><span>'+fmt(byCat[c])+pctI(byCat[c])+'</span></div><div class="tr"><div class="fl" style="width:'+(byCat[c]/maxC*100)+'%;background:'+cc(c)+'"></div></div></div>').join('') : '<div class="empty" style="padding:14px">Sin gasto variable este mes.</div>';
-  html+='<div class="blk">Gasto variable por categoría</div>'+catHTML+'<div class="ftot">Subtotal variable '+fmt(varTot)+pctI(varTot)+'</div>';
-
-  // Fijos de la persona
-  const fList=fijosDetalle(who);
-  const fijHTML=fList.length? fList.map(f=>'<div class="xrow"><span class="d">'+f.nombre+(f.paid?' <small style="color:var(--pine);font-weight:700">✓ pago</small>':'')+'</span><span class="a">'+fmt(f.monto)+'</span></div>').join('') : '<div class="empty" style="padding:14px">Sin fijos.</div>';
-  html+='<div class="blk">Fijos</div>'+fijHTML+'<div class="ftot">Subtotal fijos '+fmt(fijos)+pctI(fijos)+'</div>';
-
-  // Tarjeta a pagar
-  html+='<div class="blk">Tarjeta a pagar</div><div class="xrow"><span class="d">Total del resumen del mes</span><span class="a">'+fmt(tarjeta)+pctI(tarjeta)+'</span></div>';
-  html+='<div class="mf" style="margin-top:8px">Los porcentajes son sobre el ingreso de '+nombreW+' ('+fmt(ingreso)+').</div>';
-  html+='</div>'; // cierra card detalle
-
-  // ---- Evolución 6 meses: gasto y ahorro (dos grupos de barras) ----
-  const sp=d.seriesP||[];
-  if(sp.length){
-    const gv=x=> isB?(x.gL+x.gV):(who==='L'?x.gL:x.gV);
-    const av=x=> isB?(x.aL+x.aV):(who==='L'?x.aL:x.aV);
-    const maxB=Math.max(1,...sp.map(x=>Math.max(gv(x),Math.max(av(x),0))));
-    const cols=sp.map(x=>{ const M=+x.mes.split('-')[1]; const g=gv(x),a=av(x);
-      const hg=Math.round(Math.max(0,g)/maxB*110), ha=Math.round(Math.max(0,a)/maxB*110);
-      return '<div class="gcol"><div class="pair">'
-        +'<div class="b g" style="height:'+hg+'px" title="Gasto '+fmt(g)+'"></div>'
-        +'<div class="b a" style="height:'+ha+'px" title="Ahorro '+fmt(a)+'"></div></div>'
-        +'<div class="lab">'+MONTHS[M-1].slice(0,3)+'</div></div>'; }).join('');
-    html+='<div class="card"><div class="ct">Últimos 6 meses · '+nombreW+'</div>'
-      +'<div class="legend"><span><i class="sw g"></i>Gasto</span><span><i class="sw a"></i>Ahorro</span></div>'
-      +'<div class="gbars">'+cols+'</div>'
-      +'<div class="hint">Gasto = lo gastado en el mes (todo medio). Ahorro = ingreso − fijos − tarjetas − gasto por fuera de tarjeta. Fijos, tarjetas e ingreso se toman con los valores actuales de configuración.</div></div>';
+  if(who==='yo'){
+    const ingreso=s.income||0, ahorro=s.savings||0, tarjeta=s.tarjeta||0, fijos=s.miFijos||0;
+    const pctI=v=>ingreso>0?' <small class="pctpill">'+(v/ingreso*100).toFixed(1)+'%</small>':'';
+    html+='<div class="sgrid" style="margin:8px 0">'
+      +'<div class="pill"><div class="who">Tu ingreso</div><div class="big">'+fmt(ingreso)+'</div></div>'
+      +'<div class="pill"><div class="who">Tu ahorro</div><div class="big '+(ahorro>=0?'pos':'neg')+'">'+fmt(ahorro)+'</div></div></div>';
+    html+='<div class="blk">Cómo se reparte tu ingreso</div>'+compBar(ingreso,fijos,tarjeta,ahorro)
+      +(ahorro<0?'<div class="mf" style="color:var(--clay);margin-top:4px">Tu gasto comprometido supera tu ingreso este mes.</div>':'');
+    // categorías mías
+    const exps=(s.expenses||[]).filter(e=>e.quien===s.yo);
+    const catOrder=['Comer afuera','Delivery','Súper','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Empleada doméstica','Deportes','Vehículos','Farmacia','Hogar','Mascotas','Otros'];
+    const byCat={}; exps.forEach(e=>{ byCat[e.cat]=(byCat[e.cat]||0)+(+e.monto||0); });
+    const catRows=catOrder.filter(c=>byCat[c]>0);
+    const varTot=catRows.reduce((a,c)=>a+byCat[c],0);
+    const maxC=Math.max(1,...catRows.map(c=>byCat[c]));
+    const catHTML=catRows.length? catRows.map(c=>'<div class="catbar"><div class="top"><span>'+c+'</span><span>'+fmt(byCat[c])+pctI(byCat[c])+'</span></div><div class="tr"><div class="fl" style="width:'+(byCat[c]/maxC*100)+'%;background:'+cc(c)+'"></div></div></div>').join(''):'<div class="empty" style="padding:14px">Sin gasto variable este mes.</div>';
+    html+='<div class="blk">Tu gasto variable por categoría</div>'+catHTML+'<div class="ftot">Subtotal variable '+fmt(varTot)+pctI(varTot)+'</div>';
+    // mis fijos
+    const fList=fijosDetalleYo();
+    const fijHTML=fList.length? fList.map(f=>'<div class="xrow"><span class="d">'+f.nombre+(f.paid?' <small style="color:var(--pine);font-weight:700">✓ pago</small>':'')+'</span><span class="a">'+fmt(f.monto)+'</span></div>').join(''):'<div class="empty" style="padding:14px">Sin fijos.</div>';
+    html+='<div class="blk">Tus fijos</div>'+fijHTML+'<div class="ftot">Subtotal fijos '+fmt(fijos)+pctI(fijos)+'</div>';
+    html+='<div class="blk">Tu tarjeta a pagar</div><div class="xrow"><span class="d">Total de tu resumen</span><span class="a">'+fmt(tarjeta)+pctI(tarjeta)+'</span></div>';
+    html+='<div class="mf" style="margin-top:8px">Los porcentajes son sobre tu ingreso ('+fmt(ingreso)+').</div></div>';
+    // 6 meses (gasto + ahorro)
+    const sy=d.seriesYo||[];
+    if(sy.length){
+      const maxB=Math.max(1,...sy.map(x=>Math.max(x.gasto,Math.max(x.ahorro,0))));
+      const cols=sy.map(x=>{ const M=+x.mes.split('-')[1]; const hg=Math.round(Math.max(0,x.gasto)/maxB*110), ha=Math.round(Math.max(0,x.ahorro)/maxB*110);
+        return '<div class="gcol"><div class="pair"><div class="b g" style="height:'+hg+'px" title="Gasto '+fmt(x.gasto)+'"></div><div class="b a" style="height:'+ha+'px" title="Ahorro '+fmt(x.ahorro)+'"></div></div><div class="lab">'+MONTHS[M-1].slice(0,3)+'</div></div>'; }).join('');
+      html+='<div class="card"><div class="ct">Tus últimos 6 meses</div>'
+        +'<div class="legend"><span><i class="sw g"></i>Gasto</span><span><i class="sw a"></i>Ahorro</span></div>'
+        +'<div class="gbars">'+cols+'</div>'
+        +'<div class="hint">Gasto = lo que gastaste en el mes (todo medio). Ahorro = tu ingreso − tus fijos − tu tarjeta − tu gasto por fuera de tarjeta.</div></div>';
+    }
+  } else {
+    // ---- HOGAR: solo la capa compartida, sin ahorro combinado ----
+    const shared=(s.expenses||[]).filter(e=>e.vis==='compartido');
+    const catOrder=['Comer afuera','Delivery','Súper','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Empleada doméstica','Deportes','Vehículos','Farmacia','Hogar','Mascotas','Otros'];
+    const byCat={}; shared.forEach(e=>{ byCat[e.cat]=(byCat[e.cat]||0)+(+e.monto||0); });
+    const catRows=catOrder.filter(c=>byCat[c]>0);
+    const varTot=catRows.reduce((a,c)=>a+byCat[c],0);
+    const maxC=Math.max(1,...catRows.map(c=>byCat[c]));
+    const catHTML=catRows.length? catRows.map(c=>'<div class="catbar"><div class="top"><span>'+c+'</span><span>'+fmt(byCat[c])+'</span></div><div class="tr"><div class="fl" style="width:'+(byCat[c]/maxC*100)+'%;background:'+cc(c)+'"></div></div></div>').join(''):'<div class="empty" style="padding:14px">Sin gastos compartidos este mes.</div>';
+    html+='<div class="mf" style="margin:8px 0">Solo lo marcado <b>compartido</b> por los dos. Lo privado de cada uno no aparece.</div>';
+    html+='<div class="blk">Gasto compartido por categoría</div>'+catHTML+'<div class="ftot">Total compartido '+fmt(varTot)+'</div>';
+    // fijos del hogar (lista completa)
+    const fh=s.fijosHogar||[];
+    const fijHTML=fh.length? fh.map(f=>'<div class="xrow"><span class="d">'+f.nombre+'<small>'+f.quien+(f.paid?' · ✓ pago':'')+'</small></span><span class="a">'+fmt(f.monto)+'</span></div>').join(''):'<div class="empty" style="padding:14px">Sin fijos del hogar.</div>';
+    html+='<div class="blk">Fijos del hogar</div>'+fijHTML+'<div class="ftot">Total fijos hogar '+fmt(s.fijosHogarTotal||0)+'</div></div>';
+    // 6 meses (solo gasto compartido)
+    const sh=d.seriesHogar||[];
+    if(sh.length){
+      const maxB=Math.max(1,...sh.map(x=>x.gasto));
+      const cols=sh.map(x=>{ const M=+x.mes.split('-')[1]; const hg=Math.round(Math.max(0,x.gasto)/maxB*120);
+        return '<div class="col"><div class="val">'+(x.gasto>0?Math.round(x.gasto/1000)+'k':'')+'</div><div class="stack" style="height:'+Math.max(3,hg)+'px"><div class="seg-l" style="height:'+hg+'px"></div></div><div class="lab">'+MONTHS[M-1].slice(0,3)+'</div></div>'; }).join('');
+      html+='<div class="card"><div class="ct">Gasto compartido · últimos 6 meses</div><div class="bars">'+cols+'</div>'
+        +'<div class="hint">Suma de todo lo marcado compartido, mes a mes.</div></div>';
+    }
   }
   return html;
 }
 
 function viewCfg(){
-  const s=summary,c=(s&&s.config)||{};
+  const s=summary; const c=Object.assign({}, (s&&s.config)||{});
+  const slot = yo==='Vanessa'?'V':'L';
+  // fallbacks: si aún no hay clave por-persona, uso la legacy compartida como punto de partida
+  if(c['tope_tarjeta_'+slot]===undefined) c['tope_tarjeta_'+slot]=c['tope_tarjeta']||'';
+  if(c['rep_pagos_'+slot]===undefined)    c['rep_pagos_'+slot]=c['rep_pagos']||'off';
+  if(c['rep_resumen_'+slot]===undefined)  c['rep_resumen_'+slot]=c['rep_resumen']||'off';
   const v=k=>c[k]!==undefined?c[k]:'';
   const row=(k,lab,hint,plain)=>{const val=plain?v(k):fmtNum(v(k));const oi=plain?'':' oninput="this.value=fmtNum(this.value)"';return '<div class="cfgrow"><span class="k">'+lab+(hint?'<small>'+hint+'</small>':'')+'</span><input class="ci" onfocus="this.select()"'+oi+' data-key="'+k+'" inputmode="decimal" value="'+val+'"></div>';};
   const sel=(k,lab,opts)=>{const cur=String(v(k));return '<div class="cfgrow"><span class="k">'+lab+'</span><select class="cs" data-key="'+k+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>';};
-  const fd=(s&&s.fijosData)||{hogar:[],persL:[],persV:[]};
-  const allF=[].concat(fd.hogar||[],fd.persL||[],fd.persV||[]).sort((a,b)=>(a.id||0)-(b.id||0));
+  const allF=[].concat(s&&s.fijosHogar||[], s&&s.misPersonales||[]).sort((a,b)=>(a.id||0)-(b.id||0));
   const opt=(list,cur)=>list.map(o=>'<option'+(o===cur?' selected':'')+'>'+o+'</option>').join('');
   const fijoEdit=f=>'<div class="fijoedit" data-fid="'+f.id+'">'
     +'<input class="fe-nombre" onfocus="this.select()" value="'+(f.nombre||'')+'">'
@@ -639,20 +627,32 @@ function viewCfg(){
     +'<button class="fe-del" data-delf="'+f.id+'">×</button></div>'
     +'<div class="fe-line"><select class="fe-quien">'+opt(['Lautaro','Vanessa','Ambos'],f.quien)+'</select>'
     +'<select class="fe-tipo">'+opt(['Hogar','Personal'],f.tipo)+'</select></div></div>';
-  return '<div class="card"><div class="eyebrow">Configuración de '+labelYM(curYM)+'</div>'
-  +'<div class="hint">Actualizá lo que cambió este mes. Al guardar se aplican los ingresos, topes, reportes y los cambios en los fijos.</div>'
-  +'<div class="blk">Ingresos del mes</div>'+row('incomeL','Sueldo Lautaro')+row('incomeV','Sueldo Vanessa')+'<div class="blk">Tarjetas a pagar este mes</div>'+row('tarjetas_L','Tarjetas Lautaro','total del resumen')+row('tarjetas_V','Tarjetas Vanessa','total del resumen')
+  return '<div class="card"><div class="eyebrow">Cuenta</div>'
+  +'<div class="cfgrow"><span class="k">Usuario<small>en este teléfono</small></span><span style="font-weight:800;color:var(--pine);font-size:16px">'+(yo||'—')+'</span></div>'
+  +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+  +'<button class="btn ghost" id="bSwitch" style="flex:1;min-width:120px">Cambiar usuario</button>'
+  +'<button class="btn ghost" id="bPin" style="flex:1;min-width:120px">'+(getPin()?'Cambiar PIN':'Activar PIN')+'</button>'
+  +(getPin()?'<button class="btn ghost" id="bPinOff" style="flex:1;min-width:120px">Quitar PIN</button>':'')
+  +'</div>'
+  +'<div class="hint" style="margin-top:8px">El PIN bloquea este teléfono al abrir la app. Es protección local (privacidad blanda): no cifra los datos del Sheet.</div></div>'
+  +'<div class="card"><div class="eyebrow">Lo tuyo · '+labelYM(curYM)+'</div>'
+  +'<div class="hint">Solo vos ves y editás esto. '+OTRO()+' tiene su propia versión.</div>'
+  +'<div class="blk">Tu ingreso y tu tarjeta</div>'
+  +row('income'+slot,'Tu sueldo')+row('tarjetas_'+slot,'Tu tarjeta a pagar','total de tu resumen')
+  +row('tope_tarjeta_'+slot,'Tu tope de tarjeta','0 = sin tope')
+  +'<div class="blk">Tus avisos por mail</div>'
+  +sel('rep_pagos_'+slot,'Aviso de pagos',[['off','No enviar'],['dia','El día del vencimiento'],['previo','El día anterior']])
+  +sel('rep_resumen_'+slot,'Resumen completo',[['off','No enviar'],['semanal','Semanal (lunes)'],['mensual','Mensual (día 1)']])
+  +'</div>'
+  +'<div class="card"><div class="eyebrow">Del hogar (compartido)</div>'
+  +'<div class="hint">Esto lo ven y lo editan los dos.</div>'
   +'<div class="blk">Topes variables (dinámicos)</div>'
-  +row('pct_comer','Comer afuera (% ingreso)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% ingreso)','sugerido 5%',true)
+  +row('pct_comer','Comer afuera (% del ingreso de cada uno)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% del ingreso de cada uno)','sugerido 5%',true)
   +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" data-key="cap_super" inputmode="decimal" value="'+fmtNum(v('cap_super'))+'"></div>'
   +(s&&s.superSug?'<div class="suggest" id="useSug">↳ usar sugerencia '+fmt(s.superSug)+'</div>':'')
-  +row('tope_tarjeta','Tope tarjeta de crédito (mensual)','gasto del hogar · 0 = sin tope')
-  +'<div class="blk">Reportes por mail</div>'
-  +sel('rep_pagos','Aviso de pagos',[['off','No enviar'],['dia','El día del vencimiento'],['previo','El día anterior']])
-  +sel('rep_resumen','Resumen completo',[['off','No enviar'],['semanal','Semanal (lunes)'],['mensual','Mensual (día 1)']])
   +'</div>'
   +'<div class="card" style="margin-bottom:80px"><div class="eyebrow">Gastos fijos</div>'
-  +'<div class="hint">Editá nombre, monto, quién paga, tipo y día de vencimiento. El día alimenta los avisos de pago.</div>'
+  +'<div class="hint">Los del hogar y los tuyos personales. Editá nombre, monto, quién paga, tipo y día de vencimiento.</div>'
   +'<div style="margin-top:10px">'+(allF.length?allF.map(fijoEdit).join(''):'<div class="empty">Sin fijos. Agregá el primero.</div>')+'</div>'
   +'<button class="btn ghost" id="bAddFijo">+ Agregar gasto fijo</button></div>'
   +'<div class="savebar"><button class="btn" id="bCfg">Guardar el mes</button></div>';
@@ -661,8 +661,10 @@ function viewCfg(){
 function wire(){
   document.querySelectorAll('[data-dwho]').forEach(b=>b.onclick=()=>{dashWho=b.dataset.dwho;render();});
   document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{draft.cat=b.dataset.c;render();});
-  document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{draft.quien=b.dataset.w;render();});
-  document.querySelectorAll('[data-cw]').forEach(b=>b.onclick=()=>{cdraft.quien=b.dataset.cw;render();});
+  function syncAddInputs(){ const a=document.getElementById('iAmt'); if(a)draft.monto=a.value; const md=document.getElementById('iMedio'); if(md)draft.medio=md.value; const f=document.getElementById('iFecha'); if(f)draft.fecha=f.value; const nt=document.getElementById('iNota'); if(nt)draft.nota=nt.value; const ct=document.getElementById('iCat'); if(ct)draft.cat=ct.value; }
+  document.querySelectorAll('[data-vis]').forEach(b=>b.onclick=()=>{ syncAddInputs(); draft.vis=b.dataset.vis; render(); });
+  const iCatEl=document.getElementById('iCat'); if(iCatEl)iCatEl.onchange=e=>{ syncAddInputs(); draft.cat=e.target.value; draft.vis=HOGAR_CATS.includes(draft.cat)?'compartido':'privado'; render(); };
+  document.querySelectorAll('[data-cvis]').forEach(b=>b.onclick=()=>{ const dd=document.getElementById('cDesc'); if(dd)cdraft.descripcion=dd.value; const c2=document.getElementById('cCuota'); if(c2)cdraft.cuota_mensual=parseNum(c2.value); const cn=document.getElementById('cN'); if(cn)cdraft.n_cuotas=parseInt(cn.value)||''; const ci2=document.getElementById('cIni'); if(ci2)cdraft.mes_inicio=ci2.value; cdraft.vis=b.dataset.cvis; render(); });
   const amt=document.getElementById('iAmt'); if(amt)amt.oninput=e=>draft.monto=e.target.value;
   const bAdd=document.getElementById('bAdd'); if(bAdd)bAdd.onclick=()=>{
     if(Date.now()-lastSave<900) return;        // anti doble-toque (evita duplicados)
@@ -670,9 +672,9 @@ function wire(){
     if(!m||m<=0){document.getElementById('iAmt').focus();return;}
     lastSave=Date.now();
     draft.cat=document.getElementById('iCat').value;draft.medio=document.getElementById('iMedio').value;draft.fecha=document.getElementById('iFecha').value;draft.nota=document.getElementById('iNota').value.trim();
-    post({action:'save',monto:m,cat:draft.cat,quien:draft.quien,medio:draft.medio,fecha:draft.fecha,nota:draft.nota});
+    post({action:'save',monto:m,cat:draft.cat,quien:yo,medio:draft.medio,fecha:draft.fecha,nota:draft.nota,visibilidad:draft.vis});
     if(summary&&summary.expenses&&draft.fecha.slice(0,7)===curYM){
-      summary.expenses.push({id:'t'+Date.now(),date:draft.fecha,quien:draft.quien,cat:draft.cat,medio:draft.medio,monto:m,nota:draft.nota});
+      summary.expenses.push({id:'t'+Date.now(),date:draft.fecha,quien:yo,cat:draft.cat,medio:draft.medio,monto:m,nota:draft.nota,vis:draft.vis});
       recompute();
     }
     toast('✓ '+fmt(m)+' · '+draft.cat);
@@ -687,8 +689,8 @@ function wire(){
     cdraft.n_cuotas=parseInt(document.getElementById('cN').value);cdraft.mes_inicio=document.getElementById('cIni').value;
     if(!cdraft.cuota_mensual||!cdraft.n_cuotas){alert('Completá cuota y cantidad');return;}
     bC.textContent='Guardando…';
-    await post({action:'addCuota',descripcion:cdraft.descripcion,quien:cdraft.quien,cuota_mensual:cdraft.cuota_mensual,n_cuotas:cdraft.n_cuotas,mes_inicio:cdraft.mes_inicio});
-    cdraft={descripcion:'',quien:'Lautaro',cuota_mensual:'',n_cuotas:'',mes_inicio:curYM};
+    await post({action:'addCuota',descripcion:cdraft.descripcion,quien:yo,cuota_mensual:cdraft.cuota_mensual,n_cuotas:cdraft.n_cuotas,mes_inicio:cdraft.mes_inicio,visibilidad:cdraft.vis});
+    cdraft={descripcion:'',quien:yo,cuota_mensual:'',n_cuotas:'',mes_inicio:curYM,vis:'privado'};
     cuotas=await api({action:'cuotas',ym:curYM});dash=null;render();
   };
   const us=document.getElementById('useSug'); if(us)us.onclick=()=>{document.querySelector('[data-key="cap_super"]').value=fmtNum(summary.superSug);};
@@ -696,13 +698,13 @@ function wire(){
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.pay, wasPaid=b.dataset.paid==='1';
     post({action: wasPaid?'quitarPago':'marcarPago', fijoId:id, mes:curYM});
-    if(summary&&summary.fijosData){ const upd=f=>{if(String(f.id)===String(id))f.paid=!wasPaid;};
-      (summary.fijosData.hogar||[]).forEach(upd);(summary.fijosData.persL||[]).forEach(upd);(summary.fijosData.persV||[]).forEach(upd); }
+    if(summary){ const upd=f=>{if(String(f.id)===String(id))f.paid=!wasPaid;};
+      (summary.fijosHogar||[]).forEach(upd);(summary.misPersonales||[]).forEach(upd); }
     dash=null; render();
   });
   // agregar fijo
   const bAF=document.getElementById('bAddFijo'); if(bAF)bAF.onclick=async()=>{
-    bAF.textContent='Agregando…'; post({action:'addFijo',nombre:'Nuevo gasto',monto:0,quien:'Lautaro',tipo:'Personal',dia:1});
+    bAF.textContent='Agregando…'; post({action:'addFijo',nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1});
     setTimeout(async()=>{ summary=await api({action:'summary',ym:curYM}); render(); }, 1200);
   };
   // borrar fijo
@@ -723,8 +725,57 @@ function wire(){
     });
     bCfg.textContent='Guardando…';post({action:'saveConfig',updates:up,ym:curYM});toast('✓ Mes guardado');dash=null;reconciliar(1800);
   };
+  // ---- Cuenta: cambiar usuario / PIN ----
+  const bSwitch=document.getElementById('bSwitch'); if(bSwitch)bSwitch.onclick=()=>{ if(!confirm('¿Cambiar de usuario en este teléfono?'))return; localStorage.removeItem('fh_yo'); yo=''; boot(); };
+  const bPin=document.getElementById('bPin'); if(bPin)bPin.onclick=()=>{
+    if(getPin()){ if(confirm('El PIN ya está activo. ¿Querés cambiarlo?')) askNewPin(); }
+    else askNewPin();
+  };
+  const bPinOff=document.getElementById('bPinOff'); if(bPinOff)bPinOff.onclick=()=>{ if(confirm('¿Quitar el PIN de acceso?')){ setPin(''); toast('PIN quitado'); render(); } };
 }
-loadAll();
+function askNewPin(){
+  const p=prompt('Elegí un PIN de 4 a 6 dígitos:'); if(p===null) return;
+  if(!/^\d{4,6}$/.test(p)){ alert('El PIN tiene que ser de 4 a 6 dígitos.'); return; }
+  const p2=prompt('Repetí el PIN:'); if(p2===null) return;
+  if(p!==p2){ alert('No coinciden.'); return; }
+  setPin(p); unlocked=true; toast('✓ PIN activado'); render();
+}
+
+// ===== Identidad + PIN (privacidad blanda: viven en este dispositivo) =====
+function hashPin(s){ let h=5381; for(let i=0;i<s.length;i++){h=((h<<5)+h+s.charCodeAt(i))>>>0;} return 'p'+h.toString(36); }
+function getPin(){ return localStorage.getItem('fh_pin')||''; }
+function setPin(p){ if(p) localStorage.setItem('fh_pin',hashPin(String(p))); else localStorage.removeItem('fh_pin'); }
+function gateEl(){ let g=document.getElementById('gate'); if(!g){ g=document.createElement('div'); g.id='gate'; document.body.appendChild(g); } return g; }
+function hideGate(){ const g=document.getElementById('gate'); if(g) g.remove(); }
+function showIdentityGate(){
+  const g=gateEl();
+  g.innerHTML='<div class="gatebox"><div class="gtitle">Finanzas <b>hogar</b></div><div class="gsub">¿Quién sos?</div>'
+    +'<button class="gbtn" data-id="Lautaro">Lautaro</button>'
+    +'<button class="gbtn" data-id="Vanessa">Vanessa</button>'
+    +'<div class="ghint">Queda guardado en este teléfono. Lo podés cambiar después desde Configuración.</div></div>';
+  g.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{ yo=b.dataset.id; localStorage.setItem('fh_yo',yo); draft.quien=yo; cdraft.quien=yo; boot(); });
+}
+function showPinGate(){
+  const g=gateEl();
+  g.innerHTML='<div class="gatebox"><div class="gtitle">Finanzas <b>hogar</b></div><div class="gsub">Hola '+yo+', ingresá tu PIN</div>'
+    +'<input id="pinIn" class="ginput" type="password" inputmode="numeric" maxlength="6" placeholder="••••">'
+    +'<button class="gbtn" id="pinOk">Entrar</button><div id="pinErr" class="gerr"></div>'
+    +'<div class="ghint" id="pinSwitch">Cambiar de usuario</div></div>';
+  const inp=g.querySelector('#pinIn'); setTimeout(()=>{try{inp.focus();}catch(e){}},120);
+  const tryPin=()=>{ if(hashPin(inp.value)===getPin()){ unlocked=true; hideGate(); startApp(); } else { g.querySelector('#pinErr').textContent='PIN incorrecto'; inp.value=''; try{inp.focus();}catch(e){} } };
+  g.querySelector('#pinOk').onclick=tryPin;
+  inp.onkeydown=e=>{ if(e.key==='Enter') tryPin(); };
+  g.querySelector('#pinSwitch').onclick=()=>{ localStorage.removeItem('fh_yo'); yo=''; boot(); };
+}
+function boot(){
+  yo=localStorage.getItem('fh_yo')||'';
+  if(!yo){ showIdentityGate(); return; }
+  draft.quien=yo; cdraft.quien=yo;
+  if(getPin() && !unlocked){ showPinGate(); return; }
+  startApp();
+}
+function startApp(){ hideGate(); loadAll(); }
+boot();
 </script>
 </body>
 </html>
