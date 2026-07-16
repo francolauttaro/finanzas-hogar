@@ -148,6 +148,19 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .frow:last-child{border-bottom:none}
 .frow .chk{width:26px;height:26px;border-radius:8px;border:1.5px solid var(--line);background:#fff;color:#fff;font-size:15px;font-weight:800;flex:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .frow.paid .chk{background:var(--pine);border-color:var(--pine)}
+.saldo{margin-top:8px;padding:11px 14px;border-radius:14px;background:var(--paper);border:1.5px solid var(--pine)}
+.saldo.neg{border-color:var(--clay)}
+.saldo .n{font-size:28px;font-weight:800;letter-spacing:-.5px;line-height:1.05}
+.saldo .n.pos{color:var(--pine)}.saldo .n.neg{color:var(--clay)}
+.saldo .cap{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+.chip{padding:8px 12px;border:1.5px solid var(--line);background:#fff;border-radius:999px;font-size:13px;font-weight:700;color:var(--ink2);cursor:pointer}
+.chip.on{background:var(--pine);color:#fff;border-color:var(--pine)}
+.xscroll{max-height:280px;overflow-y:auto;margin:0 -4px;padding:0 4px}
+.xscroll::-webkit-scrollbar{width:5px}.xscroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.paychk{width:24px;height:24px;border-radius:7px;border:1.5px solid var(--line);background:#fff;color:#fff;font-size:14px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.paychk.on{background:var(--pine);border-color:var(--pine)}
+.visx{background:none;border:none;font-size:15px;cursor:pointer;flex:none;padding:0 3px;line-height:1}
 .frow .fd{flex:1;font-size:13.5px;font-weight:600}
 .frow .fd small{display:block;color:var(--muted);font-size:11.5px;font-weight:500}
 .frow.paid .fd{color:var(--muted);text-decoration:line-through}
@@ -210,6 +223,7 @@ const OTRO=()=> yo==='Lautaro'?'Vanessa':'Lautaro';
 let tab='board', summary=null, dash=null, cuotas=null, loading=false, netError=false, editStamp=0;
 let draft={monto:'',cat:'Comer afuera',quien:(yo||'Lautaro'),medio:'Tarjeta',fecha:hoyISO(),nota:'',vis:'privado'};
 let cdraft={descripcion:'',quien:(yo||'Lautaro'),cuota_mensual:'',n_cuotas:'',mes_inicio:curYM,vis:'privado'};
+let addMode='gasto'; // pantalla Cargar: 'gasto' | 'cuota'
 let dashWho='yo'; // selector de Evolución: 'yo' | 'hogar'
 
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
@@ -331,23 +345,6 @@ function pctT(x){ return Math.round(x*100)+'%'; }
 // Mi gasto con tarjeta de crédito acumulado este mes (consumos nuevos, no el pago del resumen)
 function cardSpent(s){ const yoq=s&&s.yo; return ((s&&s.expenses)||[]).filter(x=>x.medio==='Tarjeta'&&x.quien===yoq).reduce((a,x)=>a+(+x.monto||0),0); }
 
-function tarjetaMesCard(s){
-  const cm=(s.tarjetaMes!==undefined? s.tarjetaMes : cardSpent(s));
-  const tope=+((s.topes&&s.topes.tarjeta)||0);
-  const el=s.elapsed||1, dim=s.dim||30; const proj=(s.isCur&&el)?Math.round(cm/el*dim):cm;
-  if(cm<=0 && !tope) return '';
-  let bar;
-  if(tope>0){ const r=cm/tope; const cls=r>1?'m-over':r>=.75?'m-warn':'m-ok';
-    const foot = r>1? 'Te pasaste '+fmt(cm-tope) : ('Quedan '+fmt(tope-cm)+(s.isCur?' · al ritmo cierra en '+fmt(proj):''));
-    bar='<div class="meter '+cls+'" style="margin-top:8px"><div class="mh"><span class="ml">Tu consumo del mes</span><span class="mv">'+fmt(cm)+' / '+fmt(tope)+'</span></div><div class="track"><div class="fill" style="width:'+Math.min(r*100,100).toFixed(1)+'%"></div></div><div class="mf">'+foot+'</div></div>';
-  } else {
-    bar='<div class="meter m-ok" style="margin-top:8px"><div class="mh"><span class="ml">Tu consumo del mes</span><span class="mv">'+fmt(cm)+'</span></div><div class="mf" style="color:var(--muted)">'+(s.isCur?'Al ritmo actual cierra en '+fmt(proj)+' · ':'')+'definí tu tope en la pestaña Mes</div></div>';
-  }
-  return '<div class="card"><div class="ct">Gasto con tarjeta este mes</div>'
-    +'<div class="hint" style="margin-top:0">Tus consumos nuevos con tarjeta. <b>No</b> bajan tu ahorro de este mes: se pagan en el resumen del mes que viene.</div>'
-    + bar +'</div>';
-}
-
 // ===== Motor de observaciones (interpretan tus datos + lo compartido) =====
 function buildInsights(s,d,c){
   if(!s||!s.isCur) return [];
@@ -404,13 +401,13 @@ function buildInsights(s,d,c){
     2:'Febrero es corto: el mismo gasto rinde en menos días. En marzo llegan gastos de inicio de año.',
     3:'Marzo: mes de gastos de arranque (colegios, seguros, patentes). Conviene aflojar en el resto.',
     6:'Junio: llega el medio aguinaldo. Buen momento para reforzar el ahorro.',
-    7:'Julio: vacaciones de invierno, suele subir salidas y viajes.'};
+    7:''};
   if(seas[mo]) add('board', mo===6?'good':'info', seas[mo], 30);
   return out;
 }
 function insightsCard(scope){
   if(!summary||!summary.isCur) return '';
-  const items=buildInsights(summary,dash,cuotas).filter(i=>i.scope===scope).sort((a,b)=>b.prio-a.prio).slice(0, scope==='board'?4:3);
+  const items=buildInsights(summary,dash,cuotas).filter(i=>i.scope===scope).sort((a,b)=>b.prio-a.prio).slice(0, scope==='board'?2:3);
   if(!items.length) return '';
   const icon=l=> l==='warn'?'⚠️': l==='good'?'✅':'💡';
   const rows=items.map(i=>'<div class="insight '+i.level+'"><span class="ic">'+icon(i.level)+'</span><span class="it">'+i.text+'</span></div>').join('');
@@ -428,47 +425,85 @@ function viewBoard(){
   const pc=v=>v>=0?'pos':'neg';
   const sProj=(s.savingsProj!==undefined? s.savingsProj : calcSavingsProj(s));
   const projLine=(s.isCur&&sProj!==undefined&&sProj!==null)?'<div class="proj">Proyectado fin de mes <b class="'+pc(sProj)+'">'+fmt(sProj)+'</b></div>':'';
-  const exAll=(s.expenses||[]).slice().reverse().slice(0,12);
-  const list=exAll.length?exAll.map(e=>'<div class="xrow"><span class="dot" style="background:'+(cc(e.cat))+'"></span><span class="d">'+e.cat+'<small>'+(e.quien===s.yo?'vos':e.quien)+' · '+e.medio+(e.vis==='compartido'?' · 👥':'')+(e.nota?' · '+e.nota:'')+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+'</small></span><span class="a">'+fmt(e.monto)+'</span>'+(e.quien===s.yo?'<button class="x" data-del="'+e.id+'">×</button>':'')+'</div>').join(''):'<div class="empty">Sin gastos este mes. Tocá <b>Cargar</b>.</div>';
+  const exAll=(s.expenses||[]).slice().reverse();
+  const list=exAll.length?exAll.map(e=>'<div class="xrow"><span class="dot" style="background:'+(cc(e.cat))+'"></span><span class="d">'+e.cat+'<small>'+(e.quien===s.yo?'vos':e.quien)+' · '+e.medio+(e.quien!==s.yo&&e.vis==='compartido'?' · 👥':'')+(e.nota?' · '+e.nota:'')+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+'</small></span><span class="a">'+fmt(e.monto)+'</span>'+(e.quien===s.yo?'<button class="visx" data-vistoggle="'+e.id+'" data-vis="'+e.vis+'" title="'+(e.vis==='compartido'?'Compartido — tocá para hacerlo privado':'Privado — tocá para compartir')+'">'+(e.vis==='compartido'?'👥':'🔒')+'</button><button class="x" data-del="'+e.id+'">×</button>':'')+'</div>').join(''):'<div class="empty">Sin gastos este mes. Tocá <b>Cargar</b>.</div>';
+  const superMeter=(superShared>0||t.super>0)? meter('Súper (hogar)',superShared,t.super,el,dim) : '';
   return insightsCard('board')
   +'<div class="card"><div class="eyebrow">Tu ahorro · '+labelYM(curYM)+'</div>'
-  +'<div class="big '+pc(s.savings)+'" style="font-size:32px;margin-top:6px">'+fmt(s.savings)+'</div>'
-  +'<div class="sub '+pc(s.savings)+'">'+pctf(s.pct)+' de tu ingreso</div>'+projLine
-  +'<div class="hint" style="margin-top:8px">Ahorro de caja hasta hoy: tu ingreso − tus fijos − tu tarjeta − lo que gastaste por fuera de tarjeta. El <b>proyectado</b> estima el cierre al ritmo actual. Día '+el+' de '+dim+'.</div></div>'
+  +'<div class="saldo '+pc(s.savings)+'"><div class="cap">Balance real del mes</div><div class="n '+pc(s.savings)+'">'+fmt(s.savings)+'</div><div class="sub '+pc(s.savings)+'" style="margin-top:2px">'+pctf(s.pct)+' de tu ingreso</div></div>'
+  + projLine
+  +'<div style="margin-top:12px">'+compBar(s.income||0,s.miFijos||0,s.tarjeta||0,s.savings||0)+'</div>'
+  +'<div class="hint" style="margin-top:8px">Cómo se reparte tu ingreso hasta hoy (día '+el+' de '+dim+'). El proyectado estima el cierre al ritmo actual.</div></div>'
   +tarjetasCard(s)
-  +tarjetaMesCard(s)
-  +'<div class="card"><div class="ct">Comer afuera + delivery</div><div class="tag">Tu tope: '+pctf((s.config.pct_comer||8)/100)+' de tu ingreso</div>'+meter('Tu gasto',comer,t.comer,el,dim)+'</div>'
-  +'<div class="card"><div class="ct">Salidas</div><div class="tag">Tu tope: '+pctf((s.config.pct_salidas||5)/100)+' de tu ingreso</div>'+meter('Tu gasto',salidas,t.salidas,el,dim)+'</div>'
-  +((superShared>0||t.super>0)?'<div class="card"><div class="ct">Súper del hogar</div>'+meter('Compartido entre los dos',superShared,t.super,el,dim)+'<div class="hint">Suma los gastos de súper marcados <b>compartidos</b> por los dos, contra el tope del hogar.</div></div>':'')
+  +'<div class="card"><div class="ct">Topes del mes</div>'
+    +meter('Comer + delivery',comer,t.comer,el,dim)
+    +meter('Salidas',salidas,t.salidas,el,dim)
+    +superMeter
+    +'<div class="hint">Comer y salidas se miden sobre tu ingreso. El súper suma lo compartido de los dos contra el tope del hogar.</div></div>'
   +fijosCards(s)
-  +'<div class="card"><div class="ct">Últimos movimientos</div><div class="hint" style="margin-top:0">Los tuyos y los compartidos (👥). Lo privado del otro no aparece.</div>'+list+'</div>';
+  +'<div class="card"><div class="ct">Movimientos del mes</div><div class="hint" style="margin-top:0">Todos los tuyos y los compartidos (👥). Lo privado del otro no aparece.</div><div class="xscroll">'+list+'</div></div>';
 }
 function noCapList(m){ if(!m) return '<div class="empty" style="padding:14px">Sin gastos todavía.</div>'; const ks=Object.keys(m).filter(k=>m[k]>0); if(!ks.length) return '<div class="empty" style="padding:14px">Sin gastos en estas categorías todavía.</div>'; return ks.map(k=>'<div class="xrow"><span class="dot" style="background:'+cc(k)+'"></span><span class="d">'+k+'</span><span class="a">'+fmt(m[k])+'</span></div>').join(''); }
-function tarjetasCard(s){ const t=s.tarjeta||0;
-  if(t<=0) return '<div class="card"><div class="ct">Tu pago de tarjeta del mes</div><div class="hint">Cargá el total de tu resumen en la pestaña Mes. Es lo que efectivamente pagás e impacta directo en tu ahorro.</div></div>';
-  return '<div class="card"><div class="ct">Tu pago de tarjeta del mes</div><div class="big" style="margin-top:6px">'+fmt(t)+'</div>'
-    +'<div class="hint">Incluye cuotas, suscripciones y consumos de tu resumen.</div></div>'; }
+function tarjetasCard(s){
+  const pago=s.tarjeta||0;
+  const cm=(s.tarjetaMes!==undefined? s.tarjetaMes : cardSpent(s));
+  const tope=+((s.topes&&s.topes.tarjeta)||0);
+  const el=s.elapsed||1, dim=s.dim||30; const proj=(s.isCur&&el)?Math.round(cm/el*dim):cm;
+  const paid=!!s.tarjetaPaid;
+  const pagoHTML = pago>0
+    ? '<div class="frow'+(paid?' paid':'')+'" style="border-bottom:none;padding:6px 0"><button class="paychk'+(paid?' on':'')+'" data-paycard="'+pago+'">'+(paid?'✓':'')+'</button><span class="fd" style="flex:1">A pagar este mes<small>total de tu resumen'+(paid?' · ✓ pagada':'')+'</small></span><span class="fa">'+fmt(pago)+'</span></div>'
+    : '<div class="hint" style="margin-top:0">Cargá el total de tu resumen en la pestaña Mes: es lo que pagás e impacta directo en tu ahorro.</div>';
+  let consumo='';
+  if(cm>0||tope>0){
+    if(tope>0){ const r=cm/tope, cls=r>1?'m-over':r>=.75?'m-warn':'m-ok';
+      const foot=r>1?'Te pasaste '+fmt(cm-tope):('Quedan '+fmt(tope-cm)+(s.isCur?' · al ritmo cierra en '+fmt(proj):''));
+      consumo='<div class="meter '+cls+'" style="margin-top:10px"><div class="mh"><span class="ml">Consumo nuevo del mes</span><span class="mv">'+fmt(cm)+' / '+fmt(tope)+'</span></div><div class="track"><div class="fill" style="width:'+Math.min(r*100,100).toFixed(1)+'%"></div></div><div class="mf">'+foot+'</div></div>';
+    } else {
+      consumo='<div class="meter m-ok" style="margin-top:10px"><div class="mh"><span class="ml">Consumo nuevo del mes</span><span class="mv">'+fmt(cm)+'</span></div><div class="mf" style="color:var(--muted)">'+(s.isCur?'Al ritmo cierra en '+fmt(proj)+' · ':'')+'definí tu tope en la pestaña Mes</div></div>';
+    }
+  }
+  return '<div class="card"><div class="ct">Tarjeta</div>'+pagoHTML+consumo
+    +'<div class="hint">El <b>consumo nuevo</b> no baja tu ahorro de este mes: se paga en el resumen del mes que viene.</div></div>';
+}
 function fijoRow(f){
   return '<div class="frow'+(f.paid?' paid':'')+'"><button class="chk" data-pay="'+f.id+'" data-paid="'+(f.paid?1:0)+'">'+(f.paid?'✓':'')+'</button>'
    +'<span class="fd">'+f.nombre+'<small>'+f.quien+(f.dia?' · vence día '+f.dia:'')+'</small></span>'
    +'<span class="fa">'+fmt(f.monto)+'</span></div>';
 }
 function fijosCards(s){
-  const blk=(titulo,arr)=>{ if(!arr||!arr.length) return '';
-    const tot=arr.reduce((a,f)=>a+f.monto,0), pag=arr.filter(f=>f.paid).reduce((a,f)=>a+f.monto,0);
-    return '<div class="card"><div class="ct">'+titulo+'</div>'+arr.map(fijoRow).join('')
-      +'<div class="ftot">Pagado '+fmt(pag)+' · Pendiente '+fmt(tot-pag)+'</div></div>'; };
-  return blk('Gastos del hogar', s.fijosHogar) + blk('Tus fijos personales', s.misPersonales);
+  const hogar=s.fijosHogar||[], pers=s.misPersonales||[];
+  const all=hogar.concat(pers);
+  if(!all.length) return '';
+  const tot=all.reduce((a,f)=>a+f.monto,0), pag=all.filter(f=>f.paid).reduce((a,f)=>a+f.monto,0);
+  const r=tot?pag/tot:0;
+  const prog='<div class="meter m-ok" style="margin-top:6px"><div class="mh"><span class="ml">Pagado</span><span class="mv">'+fmt(pag)+' / '+fmt(tot)+'</span></div><div class="track"><div class="fill" style="width:'+(r*100).toFixed(1)+'%"></div></div><div class="mf">Pendiente '+fmt(tot-pag)+'</div></div>';
+  const sec=(titulo,arr)=> (arr&&arr.length)? '<div class="blk">'+titulo+'</div>'+arr.map(fijoRow).join('') : '';
+  return '<div class="card"><div class="ct">Gastos fijos</div>'+prog+sec('Del hogar',hogar)+sec('Tuyos',pers)+'</div>';
 }
 
 function viewAdd(){
   const cats=['Comer afuera','Delivery','Súper','Salidas','Combustible','Agua','Viajes','Gastos personales','Ropa','Empleada doméstica','Deportes','Vehículos','Farmacia','Hogar','Mascotas','Otros'];
   const hoy=hoyISO();
-  const today=(summary&&summary.expenses||[]).filter(e=>e.date===hoy).slice().reverse();
-  const tl=today.length?today.map(e=>'<div class="xrow"><span class="dot" style="background:'+cc(e.cat)+'"></span><span class="d">'+e.cat+(e.nota?' · '+e.nota:'')+'<small>'+e.quien+' · '+e.medio+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">Nada cargado hoy.</div>';
-  return '<div class="card"><div class="eyebrow">Nuevo gasto</div>'
+  const toggle='<div class="card"><div class="seg" id="addModeG">'
+    +'<button data-addmode="gasto" class="'+(addMode==='gasto'?'on':'')+'">Gasto</button>'
+    +'<button data-addmode="cuota" class="'+(addMode==='cuota'?'on':'')+'">En cuotas</button></div></div>';
+  if(addMode==='cuota'){
+    return toggle
+    +'<div class="card"><div class="eyebrow">Nueva compra en cuotas</div>'
+    +'<div class="fg" style="margin-top:10px"><label class="lbl">Qué compraste</label><input id="cDesc" placeholder="ej: Heladera Fravega" value="'+cdraft.descripcion+'"></div>'
+    +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="cVisG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-cvis="'+o[0]+'" class="'+(cdraft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div><div class="mf" style="margin-top:6px">Privado: solo lo ves vos. Compartido: lo ve '+OTRO()+' y suma al Hogar.</div></div>'
+    +'<div class="grid2"><div class="fg"><label class="lbl">Cuota mensual</label><input id="cCuota" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="$" value="'+fmtNum(cdraft.cuota_mensual)+'"></div>'
+    +'<div class="fg"><label class="lbl"># de cuotas</label><input id="cN" onfocus="this.select()" inputmode="numeric" placeholder="6" value="'+cdraft.n_cuotas+'"></div></div>'
+    +'<div class="fg"><label class="lbl">Mes de la 1ª cuota</label><input id="cIni" type="month" value="'+cdraft.mes_inicio+'"></div>'
+    +'<button class="btn" id="bCuota">Agregar a cuotas</button>'
+    +'<div class="hint">La cuota mensual se va a sumar sola cada mes hasta completar el total. La ves en la pestaña Cuotas.</div></div>';
+  }
+  const today=(summary&&summary.expenses||[]).filter(e=>e.date===hoy && e.quien===(yo||'')).slice().reverse();
+  const tl=today.length?today.map(e=>'<div class="xrow"><span class="dot" style="background:'+cc(e.cat)+'"></span><span class="d">'+e.cat+(e.nota?' · '+e.nota:'')+'<small>'+e.medio+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="visx" data-vistoggle="'+e.id+'" data-vis="'+e.vis+'" title="'+(e.vis==='compartido'?'Compartido — tocá para hacerlo privado':'Privado — tocá para compartir')+'">'+(e.vis==='compartido'?'👥':'🔒')+'</button><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">Todavía no cargaste nada hoy.</div>';
+  return toggle
+  +'<div class="card"><div class="eyebrow">Nuevo gasto</div>'
   +'<div class="fg" style="margin-top:10px"><div class="amt-wrap"><input id="iAmt" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="0" value="'+draft.monto+'"></div></div>'
-  +'<div class="fg"><label class="lbl">Categoría</label><select id="iCat">'+cats.map(c=>'<option'+(draft.cat===c?' selected':'')+'>'+c+'</option>').join('')+'</select></div>'
+  +'<div class="fg"><label class="lbl">Categoría</label><div class="chips" id="catChips">'+cats.map(c=>'<button class="chip'+(draft.cat===c?' on':'')+'" data-c="'+c+'">'+c+'</button>').join('')+'</div></div>'
   +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="visG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-vis="'+o[0]+'" class="'+(draft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div><div class="mf" style="margin-top:6px">Privado: solo lo ves vos. Compartido: lo ve '+OTRO()+' y suma al Hogar.</div></div>'
   +'<div class="grid2"><div class="fg"><label class="lbl">Medio</label><select id="iMedio">'+['Tarjeta','Débito','Efectivo','MercadoPago'].map(m=>'<option '+(draft.medio===m?'selected':'')+'>'+m+'</option>').join('')+'</select></div>'
   +'<div class="fg"><label class="lbl">Fecha</label><input id="iFecha" type="date" value="'+draft.fecha+'"></div></div>'
@@ -493,20 +528,11 @@ function viewCuotas(){
       +'<div class="legend"><span><i class="sw pine"></i>Mías</span><span><i class="sw gold"></i>Compartidas</span></div>'
       +'<div class="bars">'+flujoBars+'</div></div>'
     : '<div class="card"><div class="ct">Cuotas por mes</div><div class="empty" style="padding:20px">No hay cuotas activas que puedas ver. Cuando cargues una (o el otro marque una compartida), vas a ver acá cómo se reparte el pago mes a mes.</div></div>';
-  const flujoHTML=fl.map(f=>'<div class="xrow"><span class="d">'+labelYM(f.ym)+'<small>Mías '+fmt(f.priv)+' · Compartidas '+fmt(f.comp)+'</small></span><span class="a">'+fmt(f.total)+'</span></div>').join('');
   const items=(c.items||[]);
-  const itemsHTML=items.length?items.map(i=>'<div class="xrow"><span class="d">'+i.desc+'<small>'+(i.vis==='compartido'?'👥 compartida · ':'')+(i.quien===yo?'vos':i.quien)+' · cuota '+i.actual+'/'+i.n+'</small></span><span class="a">'+fmt(i.cuota)+'</span>'+(i.quien===yo?'<button class="x" data-delc="'+i.id+'">×</button>':'')+'</div>').join(''):'<div class="empty" style="padding:18px">No hay cuotas activas este mes.</div>';
+  const itemsHTML=items.length?items.map(i=>'<div class="xrow"><span class="d">'+i.desc+'<small>'+(i.vis==='compartido'?'👥 compartida · ':'')+(i.quien===yo?'vos':i.quien)+' · cuota '+i.actual+'/'+i.n+'</small></span><span class="a">'+fmt(i.cuota)+'</span>'+(i.quien===yo?'<button class="x" data-delc="'+i.id+'">×</button>':'')+'</div>').join(''):'<div class="empty" style="padding:18px">No hay cuotas activas este mes. Cargá una desde <b>Cargar → En cuotas</b>.</div>';
   return insightsCard('cuotas')
   +chartCard
-  +'<div class="card"><div class="eyebrow">Flujo de cuotas · próximos 7 meses</div><div style="margin-top:8px">'+flujoHTML+'</div></div>'
-  +'<div class="card"><div class="ct">Cuotas activas en '+labelYM(curYM)+'</div>'+itemsHTML+'</div>'
-  +'<div class="card"><div class="ct">Cargar compra en cuotas</div>'
-  +'<div class="fg"><label class="lbl">Qué compraste</label><input id="cDesc" placeholder="ej: Heladera Fravega" value="'+cdraft.descripcion+'"></div>'
-  +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="cVisG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-cvis="'+o[0]+'" class="'+(cdraft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div></div>'
-  +'<div class="grid2"><div class="fg"><label class="lbl">Cuota mensual</label><input id="cCuota" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="$" value="'+fmtNum(cdraft.cuota_mensual)+'"></div>'
-  +'<div class="fg"><label class="lbl"># de cuotas</label><input id="cN" onfocus="this.select()" inputmode="numeric" placeholder="6" value="'+cdraft.n_cuotas+'"></div></div>'
-  +'<div class="fg"><label class="lbl">Mes de la 1ª cuota</label><input id="cIni" type="month" value="'+cdraft.mes_inicio+'"></div>'
-  +'<button class="btn" id="bCuota">Agregar a cuotas</button></div>';
+  +'<div class="card"><div class="ct">Cuotas activas en '+labelYM(curYM)+'</div>'+itemsHTML+'</div>';
 }
 
 // Mis fijos: personales + mi parte de los del hogar (Ambos → *miShare; quien===yo → full)
@@ -565,7 +591,7 @@ function viewDash(){
     html+='<div class="blk">Tu gasto variable por categoría</div>'+catHTML+'<div class="ftot">Subtotal variable '+fmt(varTot)+pctI(varTot)+'</div>';
     // mis fijos
     const fList=fijosDetalleYo();
-    const fijHTML=fList.length? fList.map(f=>'<div class="xrow"><span class="d">'+f.nombre+(f.paid?' <small style="color:var(--pine);font-weight:700">✓ pago</small>':'')+'</span><span class="a">'+fmt(f.monto)+'</span></div>').join(''):'<div class="empty" style="padding:14px">Sin fijos.</div>';
+    const fijHTML=fList.length? fList.map(f=>'<div class="xrow"><span class="d">'+f.nombre+(f.paid?' <small style="color:var(--pine);font-weight:700">✓ pago</small>':'')+'</span><span class="a">'+fmt(f.monto)+pctI(f.monto)+'</span></div>').join(''):'<div class="empty" style="padding:14px">Sin fijos.</div>';
     html+='<div class="blk">Tus fijos</div>'+fijHTML+'<div class="ftot">Subtotal fijos '+fmt(fijos)+pctI(fijos)+'</div>';
     html+='<div class="blk">Tu tarjeta a pagar</div><div class="xrow"><span class="d">Total de tu resumen</span><span class="a">'+fmt(tarjeta)+pctI(tarjeta)+'</span></div>';
     html+='<div class="mf" style="margin-top:8px">Los porcentajes son sobre tu ingreso ('+fmt(ingreso)+').</div></div>';
@@ -636,7 +662,7 @@ function viewCfg(){
   +'</div>'
   +'<div class="hint" style="margin-top:8px">El PIN bloquea este teléfono al abrir la app. Es protección local (privacidad blanda): no cifra los datos del Sheet.</div></div>'
   +'<div class="card"><div class="eyebrow">Lo tuyo · '+labelYM(curYM)+'</div>'
-  +'<div class="hint">Solo vos ves y editás esto. '+OTRO()+' tiene su propia versión.</div>'
+  +'<div class="hint">Estos son <b>tus</b> datos (solo vos los ves). Al empezar el mes revisá tu sueldo y el total de tu tarjeta a pagar; con eso alcanza. El resto ya está listo.</div>'
   +'<div class="blk">Tu ingreso y tu tarjeta</div>'
   +row('income'+slot,'Tu sueldo')+row('tarjetas_'+slot,'Tu tarjeta a pagar','total de tu resumen')
   +row('tope_tarjeta_'+slot,'Tu tope de tarjeta','0 = sin tope')
@@ -645,14 +671,14 @@ function viewCfg(){
   +sel('rep_resumen_'+slot,'Resumen completo',[['off','No enviar'],['semanal','Semanal (lunes)'],['mensual','Mensual (día 1)']])
   +'</div>'
   +'<div class="card"><div class="eyebrow">Del hogar (compartido)</div>'
-  +'<div class="hint">Esto lo ven y lo editan los dos.</div>'
+  +'<div class="hint">Los topes compartidos. <b>Ya vienen configurados</b>: tocá solo si algo cambió. Lo editan cualquiera de los dos.</div>'
   +'<div class="blk">Topes variables (dinámicos)</div>'
   +row('pct_comer','Comer afuera (% del ingreso de cada uno)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% del ingreso de cada uno)','sugerido 5%',true)
   +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" data-key="cap_super" inputmode="decimal" value="'+fmtNum(v('cap_super'))+'"></div>'
   +(s&&s.superSug?'<div class="suggest" id="useSug">↳ usar sugerencia '+fmt(s.superSug)+'</div>':'')
   +'</div>'
   +'<div class="card" style="margin-bottom:80px"><div class="eyebrow">Gastos fijos</div>'
-  +'<div class="hint">Los del hogar y los tuyos personales. Editá nombre, monto, quién paga, tipo y día de vencimiento.</div>'
+  +'<div class="hint"><b>Avanzado.</b> La lista ya está cargada. Entrá solo si querés ajustar un monto o agregar/sacar un fijo. Cada uno: nombre, monto, quién paga, tipo (Hogar/Personal) y día de vencimiento.</div>'
   +'<div style="margin-top:10px">'+(allF.length?allF.map(fijoEdit).join(''):'<div class="empty">Sin fijos. Agregá el primero.</div>')+'</div>'
   +'<button class="btn ghost" id="bAddFijo">+ Agregar gasto fijo</button></div>'
   +'<div class="savebar"><button class="btn" id="bCfg">Guardar el mes</button></div>';
@@ -660,10 +686,10 @@ function viewCfg(){
 
 function wire(){
   document.querySelectorAll('[data-dwho]').forEach(b=>b.onclick=()=>{dashWho=b.dataset.dwho;render();});
-  document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{draft.cat=b.dataset.c;render();});
-  function syncAddInputs(){ const a=document.getElementById('iAmt'); if(a)draft.monto=a.value; const md=document.getElementById('iMedio'); if(md)draft.medio=md.value; const f=document.getElementById('iFecha'); if(f)draft.fecha=f.value; const nt=document.getElementById('iNota'); if(nt)draft.nota=nt.value; const ct=document.getElementById('iCat'); if(ct)draft.cat=ct.value; }
+  document.querySelectorAll('[data-addmode]').forEach(b=>b.onclick=()=>{addMode=b.dataset.addmode;render();});
+  function syncAddInputs(){ const a=document.getElementById('iAmt'); if(a)draft.monto=a.value; const md=document.getElementById('iMedio'); if(md)draft.medio=md.value; const f=document.getElementById('iFecha'); if(f)draft.fecha=f.value; const nt=document.getElementById('iNota'); if(nt)draft.nota=nt.value; }
+  document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{ syncAddInputs(); draft.cat=b.dataset.c; draft.vis=HOGAR_CATS.includes(draft.cat)?'compartido':'privado'; render(); });
   document.querySelectorAll('[data-vis]').forEach(b=>b.onclick=()=>{ syncAddInputs(); draft.vis=b.dataset.vis; render(); });
-  const iCatEl=document.getElementById('iCat'); if(iCatEl)iCatEl.onchange=e=>{ syncAddInputs(); draft.cat=e.target.value; draft.vis=HOGAR_CATS.includes(draft.cat)?'compartido':'privado'; render(); };
   document.querySelectorAll('[data-cvis]').forEach(b=>b.onclick=()=>{ const dd=document.getElementById('cDesc'); if(dd)cdraft.descripcion=dd.value; const c2=document.getElementById('cCuota'); if(c2)cdraft.cuota_mensual=parseNum(c2.value); const cn=document.getElementById('cN'); if(cn)cdraft.n_cuotas=parseInt(cn.value)||''; const ci2=document.getElementById('cIni'); if(ci2)cdraft.mes_inicio=ci2.value; cdraft.vis=b.dataset.cvis; render(); });
   const amt=document.getElementById('iAmt'); if(amt)amt.oninput=e=>draft.monto=e.target.value;
   const bAdd=document.getElementById('bAdd'); if(bAdd)bAdd.onclick=()=>{
@@ -671,7 +697,7 @@ function wire(){
     const m=parseNum(document.getElementById('iAmt').value);
     if(!m||m<=0){document.getElementById('iAmt').focus();return;}
     lastSave=Date.now();
-    draft.cat=document.getElementById('iCat').value;draft.medio=document.getElementById('iMedio').value;draft.fecha=document.getElementById('iFecha').value;draft.nota=document.getElementById('iNota').value.trim();
+    draft.medio=document.getElementById('iMedio').value;draft.fecha=document.getElementById('iFecha').value;draft.nota=document.getElementById('iNota').value.trim();
     post({action:'save',monto:m,cat:draft.cat,quien:yo,medio:draft.medio,fecha:draft.fecha,nota:draft.nota,visibilidad:draft.vis});
     if(summary&&summary.expenses&&draft.fecha.slice(0,7)===curYM){
       summary.expenses.push({id:'t'+Date.now(),date:draft.fecha,quien:yo,cat:draft.cat,medio:draft.medio,monto:m,nota:draft.nota,vis:draft.vis});
@@ -694,6 +720,20 @@ function wire(){
     cuotas=await api({action:'cuotas',ym:curYM});dash=null;render();
   };
   const us=document.getElementById('useSug'); if(us)us.onclick=()=>{document.querySelector('[data-key="cap_super"]').value=fmtNum(summary.superSug);};
+  // reclasificar visibilidad de un movimiento (privado <-> compartido)
+  document.querySelectorAll('[data-vistoggle]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.vistoggle, nv=(b.dataset.vis==='compartido')?'privado':'compartido';
+    post({action:'setVis', id:id, visibilidad:nv});
+    if(summary&&summary.expenses){ const e=summary.expenses.find(x=>String(x.id)===String(id)); if(e){ e.vis=nv; recompute(); } }
+    dash=null; toast(nv==='compartido'?'👥 Ahora es compartido':'🔒 Ahora es privado'); render();
+  });
+  // marcar/desmarcar el pago de la tarjeta del mes
+  document.querySelectorAll('[data-paycard]').forEach(b=>b.onclick=()=>{
+    const paid=summary&&summary.tarjetaPaid;
+    post({action: paid?'quitarPago':'marcarPago', fijoId:'card:'+yo, mes:curYM, nombre:'Tarjeta ('+yo+')', monto:+b.dataset.paycard||0, quien:yo, tipo:'Tarjeta'});
+    if(summary) summary.tarjetaPaid=!paid;
+    render();
+  });
   // toggle de pagado (Tablero)
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.pay, wasPaid=b.dataset.paid==='1';
