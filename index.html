@@ -65,6 +65,10 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .amt-wrap{position:relative}
 .amt-wrap::before{content:'$';position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:20px;font-weight:700;color:var(--muted)}
 .amt-wrap input{padding-left:30px;font-size:26px;font-weight:800}
+.calcrow{display:flex;gap:8px;margin-top:8px}
+.calcrow button{flex:1;padding:9px;border:1.5px solid var(--line);background:#fff;border-radius:10px;font-size:18px;font-weight:800;color:var(--ink2);cursor:pointer}
+.calcrow button:active{background:var(--paper)}
+.calctot{margin-top:6px;font-size:16px;font-weight:800;color:var(--pine);min-height:20px;text-align:right}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .catgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .catgrid button{padding:13px 10px;border:1.5px solid var(--line);background:#fff;border-radius:12px;font-size:14px;
@@ -229,6 +233,22 @@ let dashWho='yo'; // selector de Evolución: 'yo' | 'hogar'
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
 function fmtNum(v){const s=String(v).replace(/[^\d]/g,'');return s?parseInt(s,10).toLocaleString('es-AR'):'';}
 function parseNum(v){return parseFloat(String(v).replace(/\./g,'').replace(',','.'))||0;}
+// ---- Calculadora del campo monto: suma/resta de partes (formato AR) ----
+function evalMonto(str){
+  const s=String(str==null?'':str).replace(/−/g,'-');   // normaliza el signo "menos" lindo
+  const re=/([+\-]?)\s*([\d.,]+)/g; let m, total=0, any=false;
+  while((m=re.exec(s))){ const val=parseNum(m[2]); if(!isNaN(val)){ total+=(m[1]==='-'?-1:1)*val; any=true; } }
+  return any? total : 0;
+}
+function esExpr(v){ return /\d\s*[+\-−]/.test(String(v||'')); }   // hay una operación entre números
+function onAmt(el){ if(!esExpr(el.value)) el.value=fmtNum(el.value); if(typeof draft!=='undefined')draft.monto=el.value; updCalc(); }
+function calcOp(op){ const el=document.getElementById('iAmt'); if(!el)return;
+  if(op==='C'){ el.value=''; }
+  else { const v=el.value.trim().replace(/\s*[+\-−]\s*$/,''); if(!v){ el.focus(); updCalc(); return; } el.value=v+' '+op+' '; }
+  el.focus(); if(typeof draft!=='undefined')draft.monto=el.value; updCalc();
+}
+function updCalc(){ const el=document.getElementById('iAmt'), t=document.getElementById('calcTot'); if(!el||!t)return;
+  t.textContent = esExpr(el.value) ? ('= '+fmt(evalMonto(el.value))) : ''; }
 const pctf=p=>(p*100).toFixed(0)+'%';
 const labelYM=ym=>{const[y,m]=ym.split('-');return MONTHS[+m-1]+' '+y;};
 const CC={'Comer afuera':'var(--clay)','Delivery':'var(--gold)','Súper':'var(--pine)','Salidas':'#b5683a','Combustible':'var(--blue)','Agua':'#4a9ec7','Viajes':'#4a7c7c','Gastos personales':'#8b7fae','Ropa':'#b06a8f','Empleada doméstica':'#7c9885','Deportes':'#d98a3d','Vehículos':'#5f7a9b','Farmacia':'#c96a8a','Hogar':'#a08262','Mascotas':'#2e8b8b','Otros':'var(--muted)','Fijos hogar':'#5b6b66','Fijos personales':'#8b7fae'};
@@ -502,7 +522,10 @@ function viewAdd(){
   const tl=today.length?today.map(e=>'<div class="xrow"><span class="dot" style="background:'+cc(e.cat)+'"></span><span class="d">'+e.cat+(e.nota?' · '+e.nota:'')+'<small>'+e.medio+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="visx" data-vistoggle="'+e.id+'" data-vis="'+e.vis+'" title="'+(e.vis==='compartido'?'Compartido — tocá para hacerlo privado':'Privado — tocá para compartir')+'">'+(e.vis==='compartido'?'👥':'🔒')+'</button><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">Todavía no cargaste nada hoy.</div>';
   return toggle
   +'<div class="card"><div class="eyebrow">Nuevo gasto</div>'
-  +'<div class="fg" style="margin-top:10px"><div class="amt-wrap"><input id="iAmt" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="0" value="'+draft.monto+'"></div></div>'
+  +'<div class="fg" style="margin-top:10px"><div class="amt-wrap"><input id="iAmt" onfocus="this.select()" oninput="onAmt(this)" inputmode="decimal" placeholder="0" value="'+draft.monto+'"></div>'
+  +'<div class="calcrow"><button type="button" onclick="calcOp(\'+\')">+</button><button type="button" onclick="calcOp(\'−\')">−</button><button type="button" onclick="calcOp(\'C\')">C</button></div>'
+  +'<div id="calcTot" class="calctot"></div>'
+  +'<div class="mf" style="margin-top:0">¿Compra en partes? Escribí <b>1500+3200</b> o usá +/−. Entra como un solo gasto con el total.</div></div>'
   +'<div class="fg"><label class="lbl">Categoría</label><div class="chips" id="catChips">'+cats.map(c=>'<button class="chip'+(draft.cat===c?' on':'')+'" data-c="'+c+'">'+c+'</button>').join('')+'</div></div>'
   +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="visG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-vis="'+o[0]+'" class="'+(draft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div><div class="mf" style="margin-top:6px">Privado: solo lo ves vos. Compartido: lo ve '+OTRO()+' y suma al Hogar.</div></div>'
   +'<div class="grid2"><div class="fg"><label class="lbl">Medio</label><select id="iMedio">'+['Tarjeta','Débito','Efectivo','MercadoPago'].map(m=>'<option '+(draft.medio===m?'selected':'')+'>'+m+'</option>').join('')+'</select></div>'
@@ -685,6 +708,7 @@ function viewCfg(){
 }
 
 function wire(){
+  try{updCalc();}catch(e){}
   document.querySelectorAll('[data-dwho]').forEach(b=>b.onclick=()=>{dashWho=b.dataset.dwho;render();});
   document.querySelectorAll('[data-addmode]').forEach(b=>b.onclick=()=>{addMode=b.dataset.addmode;render();});
   function syncAddInputs(){ const a=document.getElementById('iAmt'); if(a)draft.monto=a.value; const md=document.getElementById('iMedio'); if(md)draft.medio=md.value; const f=document.getElementById('iFecha'); if(f)draft.fecha=f.value; const nt=document.getElementById('iNota'); if(nt)draft.nota=nt.value; }
@@ -694,7 +718,7 @@ function wire(){
   const amt=document.getElementById('iAmt'); if(amt)amt.oninput=e=>draft.monto=e.target.value;
   const bAdd=document.getElementById('bAdd'); if(bAdd)bAdd.onclick=()=>{
     if(Date.now()-lastSave<900) return;        // anti doble-toque (evita duplicados)
-    const m=parseNum(document.getElementById('iAmt').value);
+    const m=evalMonto(document.getElementById('iAmt').value);
     if(!m||m<=0){document.getElementById('iAmt').focus();return;}
     lastSave=Date.now();
     draft.medio=document.getElementById('iMedio').value;draft.fecha=document.getElementById('iFecha').value;draft.nota=document.getElementById('iNota').value.trim();
