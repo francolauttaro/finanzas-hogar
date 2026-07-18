@@ -226,11 +226,16 @@ const HOGAR_CATS=['Súper','Hogar','Agua','Empleada doméstica','Mascotas']; // 
 const OTRO=()=> yo==='Lautaro'?'Vanessa':'Lautaro';
 let tab='board', summary=null, dash=null, cuotas=null, loading=false, netError=false, editStamp=0;
 let draft={monto:'',cat:'Comer afuera',quien:(yo||'Lautaro'),medio:'Tarjeta',fecha:hoyISO(),nota:'',vis:'privado'};
-let cdraft={descripcion:'',quien:(yo||'Lautaro'),cuota_mensual:'',n_cuotas:'',mes_inicio:curYM,vis:'privado'};
+let cdraft={descripcion:'',quien:(yo||'Lautaro'),cuota_mensual:'',n_cuotas:'',mes_inicio:curYM,vis:'privado',modo:'total',total:''};
+// live: calcula cada cuota a partir del total y la cantidad
+function updCuota(){ const t=document.getElementById('cTotal'), n=document.getElementById('cN'), o=document.getElementById('cCadaCuota'); if(!t||!n||!o)return;
+  const tot=parseNum(t.value), c=parseInt(n.value)||0; o.textContent = (tot>0&&c>0)? ('Cada cuota: '+fmtd(Math.round(tot/c*100)/100)+' · '+c+' cuotas') : ''; }
+function syncCuotaInputs(){ const d=document.getElementById('cDesc'); if(d)cdraft.descripcion=d.value; const t=document.getElementById('cTotal'); if(t)cdraft.total=t.value; const c=document.getElementById('cCuota'); if(c)cdraft.cuota_mensual=c.value; const n=document.getElementById('cN'); if(n)cdraft.n_cuotas=n.value; const i=document.getElementById('cIni'); if(i)cdraft.mes_inicio=i.value; }
 let addMode='gasto'; // pantalla Cargar: 'gasto' | 'cuota'
 let dashWho='yo'; // selector de Evolución: 'yo' | 'hogar'
 
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
+const fmtd=n=>{ n=+n||0; const dec=Math.abs(n%1)>0.005; return '$'+n.toLocaleString('es-AR',{minimumFractionDigits:dec?2:0,maximumFractionDigits:2}); };
 function fmtNum(v){const s=String(v).replace(/[^\d]/g,'');return s?parseInt(s,10).toLocaleString('es-AR'):'';}
 function parseNum(v){return parseFloat(String(v).replace(/\./g,'').replace(',','.'))||0;}
 // ---- Calculadora del campo monto: suma/resta de partes (formato AR) ----
@@ -242,7 +247,7 @@ function evalMonto(str){
 }
 function esExpr(v){ return /\d\s*[+\-−]/.test(String(v||'')); }   // hay una operación entre números
 function amtFocus(el){ if(esExpr(el.value)){ const n=el.value.length; try{el.setSelectionRange(n,n);}catch(e){} } else { try{el.select();}catch(e){} } }
-function onAmt(el){ if(!esExpr(el.value)) el.value=fmtNum(el.value); if(typeof draft!=='undefined')draft.monto=el.value; updCalc(); }
+function onAmt(el){ const v=el.value; if(!esExpr(v) && v.indexOf(',')<0) el.value=fmtNum(v); if(typeof draft!=='undefined')draft.monto=el.value; updCalc(); }
 function calcOp(op){ const el=document.getElementById('iAmt'); if(!el)return;
   if(op==='C'){ el.value=''; }
   else { const v=el.value.trim().replace(/\s*[+\-−]\s*$/,''); if(!v){ el.focus(); updCalc(); return; } el.value=v+' '+op+' '; }
@@ -511,15 +516,21 @@ function viewAdd(){
     +'<button data-addmode="gasto" class="'+(addMode==='gasto'?'on':'')+'">Gasto</button>'
     +'<button data-addmode="cuota" class="'+(addMode==='cuota'?'on':'')+'">En cuotas</button></div></div>';
   if(addMode==='cuota'){
+    const cmodo=cdraft.modo==='cuota'?'cuota':'total';
     return toggle
     +'<div class="card"><div class="eyebrow">Nueva compra en cuotas</div>'
     +'<div class="fg" style="margin-top:10px"><label class="lbl">Qué compraste</label><input id="cDesc" placeholder="ej: Heladera Fravega" value="'+cdraft.descripcion+'"></div>'
-    +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="cVisG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-cvis="'+o[0]+'" class="'+(cdraft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div><div class="mf" style="margin-top:6px">Privado: solo lo ves vos. Compartido: lo ve '+OTRO()+' y suma al Hogar.</div></div>'
-    +'<div class="grid2"><div class="fg"><label class="lbl">Cuota mensual</label><input id="cCuota" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" placeholder="$" value="'+fmtNum(cdraft.cuota_mensual)+'"></div>'
-    +'<div class="fg"><label class="lbl"># de cuotas</label><input id="cN" onfocus="this.select()" inputmode="numeric" placeholder="6" value="'+cdraft.n_cuotas+'"></div></div>'
+    +'<div class="fg"><label class="lbl">Visibilidad</label><div class="seg" id="cVisG">'+[['privado','🔒 Privado'],['compartido','👥 Compartido']].map(o=>'<button data-cvis="'+o[0]+'" class="'+(cdraft.vis===o[0]?'on':'')+'">'+o[1]+'</button>').join('')+'</div></div>'
+    +'<div class="fg"><label class="lbl">¿Qué sabés?</label><div class="seg" id="cModoG"><button data-cmodo="total" class="'+(cmodo==='total'?'on':'')+'">El total</button><button data-cmodo="cuota" class="'+(cmodo==='cuota'?'on':'')+'">La cuota</button></div></div>'
+    +(cmodo==='total'
+      ? '<div class="grid2"><div class="fg"><label class="lbl">Total de la compra</label><input id="cTotal" onfocus="this.select()" oninput="updCuota()" inputmode="decimal" placeholder="$" value="'+(cdraft.total||'')+'"></div>'
+        +'<div class="fg"><label class="lbl"># de cuotas</label><input id="cN" onfocus="this.select()" oninput="updCuota()" inputmode="numeric" placeholder="6" value="'+cdraft.n_cuotas+'"></div></div>'
+        +'<div id="cCadaCuota" class="calctot" style="text-align:left;margin-top:2px"></div>'
+      : '<div class="grid2"><div class="fg"><label class="lbl">Cuota mensual</label><input id="cCuota" onfocus="this.select()" inputmode="decimal" placeholder="$" value="'+(cdraft.cuota_mensual||'')+'"></div>'
+        +'<div class="fg"><label class="lbl"># de cuotas</label><input id="cN" onfocus="this.select()" inputmode="numeric" placeholder="6" value="'+cdraft.n_cuotas+'"></div></div>')
     +'<div class="fg"><label class="lbl">Mes de la 1ª cuota</label><input id="cIni" type="month" value="'+cdraft.mes_inicio+'"></div>'
     +'<button class="btn" id="bCuota">Agregar a cuotas</button>'
-    +'<div class="hint">La cuota mensual se va a sumar sola cada mes hasta completar el total. La ves en la pestaña Cuotas.</div></div>';
+    +'<div class="hint">Podés usar coma para los centavos (ej: 29333,33). La cuota se suma sola cada mes hasta completar el total.</div></div>';
   }
   const today=(summary&&summary.expenses||[]).filter(e=>e.date===hoy && e.quien===(yo||'')).slice().reverse();
   const tl=today.length?today.map(e=>'<div class="xrow"><span class="dot" style="background:'+cc(e.cat)+'"></span><span class="d">'+e.cat+(e.nota?' · '+e.nota:'')+'<small>'+e.medio+'</small></span><span class="a">'+fmt(e.monto)+'</span><button class="visx" data-vistoggle="'+e.id+'" data-vis="'+e.vis+'" title="'+(e.vis==='compartido'?'Compartido — tocá para hacerlo privado':'Privado — tocá para compartir')+'">'+(e.vis==='compartido'?'👥':'🔒')+'</button><button class="x" data-del="'+e.id+'">×</button></div>').join(''):'<div class="empty" style="padding:18px">Todavía no cargaste nada hoy.</div>';
@@ -553,7 +564,7 @@ function viewCuotas(){
       +'<div class="bars">'+flujoBars+'</div></div>'
     : '<div class="card"><div class="ct">Cuotas por mes</div><div class="empty" style="padding:20px">No hay cuotas activas que puedas ver. Cuando cargues una (o el otro marque una compartida), vas a ver acá cómo se reparte el pago mes a mes.</div></div>';
   const items=(c.items||[]);
-  const itemsHTML=items.length?items.map(i=>'<div class="xrow"><span class="d">'+i.desc+'<small>'+(i.vis==='compartido'?'👥 compartida · ':'')+(i.quien===yo?'vos':i.quien)+' · cuota '+i.actual+'/'+i.n+'</small></span><span class="a">'+fmt(i.cuota)+'</span>'+(i.quien===yo?'<button class="x" data-delc="'+i.id+'">×</button>':'')+'</div>').join(''):'<div class="empty" style="padding:18px">No hay cuotas activas este mes. Cargá una desde <b>Cargar → En cuotas</b>.</div>';
+  const itemsHTML=items.length?items.map(i=>'<div class="xrow"><span class="d">'+i.desc+'<small>'+(i.vis==='compartido'?'👥 compartida · ':'')+(i.quien===yo?'vos':i.quien)+' · cuota '+i.actual+'/'+i.n+'</small></span><span class="a">'+fmtd(i.cuota)+'</span>'+(i.quien===yo?'<button class="x" data-delc="'+i.id+'">×</button>':'')+'</div>').join(''):'<div class="empty" style="padding:18px">No hay cuotas activas este mes. Cargá una desde <b>Cargar → En cuotas</b>.</div>';
   return insightsCard('cuotas')
   +chartCard
   +'<div class="card"><div class="ct">Cuotas activas en '+labelYM(curYM)+'</div>'+itemsHTML+'</div>';
@@ -710,12 +721,14 @@ function viewCfg(){
 
 function wire(){
   try{updCalc();}catch(e){}
+  try{updCuota();}catch(e){}
   document.querySelectorAll('[data-dwho]').forEach(b=>b.onclick=()=>{dashWho=b.dataset.dwho;render();});
   document.querySelectorAll('[data-addmode]').forEach(b=>b.onclick=()=>{addMode=b.dataset.addmode;render();});
   function syncAddInputs(){ const a=document.getElementById('iAmt'); if(a)draft.monto=a.value; const md=document.getElementById('iMedio'); if(md)draft.medio=md.value; const f=document.getElementById('iFecha'); if(f)draft.fecha=f.value; const nt=document.getElementById('iNota'); if(nt)draft.nota=nt.value; }
   document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{ syncAddInputs(); draft.cat=b.dataset.c; draft.vis=HOGAR_CATS.includes(draft.cat)?'compartido':'privado'; render(); });
   document.querySelectorAll('[data-vis]').forEach(b=>b.onclick=()=>{ syncAddInputs(); draft.vis=b.dataset.vis; render(); });
-  document.querySelectorAll('[data-cvis]').forEach(b=>b.onclick=()=>{ const dd=document.getElementById('cDesc'); if(dd)cdraft.descripcion=dd.value; const c2=document.getElementById('cCuota'); if(c2)cdraft.cuota_mensual=parseNum(c2.value); const cn=document.getElementById('cN'); if(cn)cdraft.n_cuotas=parseInt(cn.value)||''; const ci2=document.getElementById('cIni'); if(ci2)cdraft.mes_inicio=ci2.value; cdraft.vis=b.dataset.cvis; render(); });
+  document.querySelectorAll('[data-cvis]').forEach(b=>b.onclick=()=>{ syncCuotaInputs(); cdraft.vis=b.dataset.cvis; render(); });
+  document.querySelectorAll('[data-cmodo]').forEach(b=>b.onclick=()=>{ syncCuotaInputs(); cdraft.modo=b.dataset.cmodo; render(); });
   const amt=document.getElementById('iAmt'); if(amt)amt.oninput=e=>draft.monto=e.target.value;
   const bAdd=document.getElementById('bAdd'); if(bAdd)bAdd.onclick=()=>{
     if(Date.now()-lastSave<900) return;        // anti doble-toque (evita duplicados)
@@ -735,14 +748,18 @@ function wire(){
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(!confirm('¿Eliminar gasto?'))return;post({action:'delete',id:b.dataset.del});if(summary&&summary.expenses){summary.expenses=summary.expenses.filter(e=>String(e.id)!==String(b.dataset.del));recompute();}render();});
   document.querySelectorAll('[data-delc]').forEach(b=>b.onclick=async()=>{if(!confirm('¿Eliminar esta cuota?'))return;await post({action:'deleteCuota',id:b.dataset.delc});cuotas=await api({action:'cuotas',ym:curYM});render();});
   const bC=document.getElementById('bCuota'); if(bC)bC.onclick=async()=>{
-    cdraft.descripcion=document.getElementById('cDesc').value.trim();
-    cdraft.cuota_mensual=parseNum(document.getElementById('cCuota').value);
-    cdraft.n_cuotas=parseInt(document.getElementById('cN').value);cdraft.mes_inicio=document.getElementById('cIni').value;
-    if(!cdraft.cuota_mensual||!cdraft.n_cuotas){alert('Completá cuota y cantidad');return;}
+    syncCuotaInputs();
+    const desc=(cdraft.descripcion||'').trim();
+    const n=parseInt(cdraft.n_cuotas)||0;
+    let cuota;
+    if(cdraft.modo==='cuota'){ cuota=parseNum(cdraft.cuota_mensual); }
+    else { const tot=parseNum(cdraft.total); cuota = n? Math.round(tot/n*100)/100 : 0; }
+    if(!cuota||!n){ alert('Completá '+(cdraft.modo==='cuota'?'la cuota':'el total')+' y la cantidad de cuotas'); return; }
     bC.textContent='Guardando…';
-    await post({action:'addCuota',descripcion:cdraft.descripcion,quien:yo,cuota_mensual:cdraft.cuota_mensual,n_cuotas:cdraft.n_cuotas,mes_inicio:cdraft.mes_inicio,visibilidad:cdraft.vis});
-    cdraft={descripcion:'',quien:yo,cuota_mensual:'',n_cuotas:'',mes_inicio:curYM,vis:'privado'};
+    await post({action:'addCuota',descripcion:desc,quien:yo,cuota_mensual:cuota,n_cuotas:n,mes_inicio:cdraft.mes_inicio,visibilidad:cdraft.vis});
+    cdraft={descripcion:'',quien:yo,cuota_mensual:'',n_cuotas:'',mes_inicio:curYM,vis:'privado',modo:cdraft.modo,total:''};
     cuotas=await api({action:'cuotas',ym:curYM});dash=null;render();
+    toast('✓ Cuota agregada: '+fmtd(cuota)+' × '+n);
   };
   const us=document.getElementById('useSug'); if(us)us.onclick=()=>{document.querySelector('[data-key="cap_super"]').value=fmtNum(summary.superSug);};
   // reclasificar visibilidad de un movimiento (privado <-> compartido)
