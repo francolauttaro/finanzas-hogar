@@ -864,7 +864,7 @@ function wire(){
   const bAF=document.getElementById('bAddFijo'); if(bAF)bAF.onclick=async()=>{
     bAF.textContent='Agregando…'; bAF.disabled=true;
     try{
-      const res=await api({action:'addFijo',nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1});
+      const res=await api({action:'addFijo',ym:curYM,nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1});
       if(res&&res.ok&&res.fijo&&summary){ summary.misPersonales=(summary.misPersonales||[]).concat([res.fijo]); }
       else { const sm=await api({action:'summary',ym:curYM}); if(sm&&!sm.error) summary=sm; }
     }catch(e){ toast('No se pudo agregar. Probá de nuevo.'); }
@@ -872,7 +872,7 @@ function wire(){
   };
   // borrar fijo (optimista: desaparece al instante)
   document.querySelectorAll('[data-delf]').forEach(b=>b.onclick=()=>{ if(!confirm('¿Eliminar este gasto fijo?'))return;
-    post({action:'deleteFijo',id:b.dataset.delf});
+    post({action:'deleteFijo',ym:curYM,id:b.dataset.delf});
     if(summary){ const keep=f=>String(f.id)!==String(b.dataset.delf); summary.misPersonales=(summary.misPersonales||[]).filter(keep); summary.fijosHogar=(summary.fijosHogar||[]).filter(keep); }
     render();
   });
@@ -892,7 +892,7 @@ function wire(){
     const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
     Object.keys(up).forEach(k=>{ if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
     try{
-      fijoUpdates.forEach(u=>post({action:'updateFijo', id:u.id, nombre:u.nombre, monto:u.monto, dia:u.dia, quien:u.quien, tipo:u.tipo}));
+      fijoUpdates.forEach(u=>post({action:'updateFijo', ym:curYM, id:u.id, nombre:u.nombre, monto:u.monto, dia:u.dia, quien:u.quien, tipo:u.tipo}));
       if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload));         // sueldo/tarjeta DEL MES
       if(Object.keys(globalUp).length) await api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}); // topes/avisos globales
       cfgDraft={}; fijoDraft={};
