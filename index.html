@@ -157,6 +157,7 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .saldo .n{font-size:28px;font-weight:800;letter-spacing:-.5px;line-height:1.05}
 .saldo .n.pos{color:var(--pine)}.saldo .n.neg{color:var(--clay)}
 .saldo .cap{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.apbreak{margin-top:6px;font-size:13px;font-weight:600;color:var(--ink2)}.apbreak b{font-weight:800;color:var(--ink)}.apbreak b.neg{color:var(--clay)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .chip{padding:6px 10px;border:1.5px solid var(--line);background:#fff;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer}
 .chip.on{background:var(--pine);color:#fff;border-color:var(--pine)}
@@ -240,7 +241,20 @@ function updCuota(){ const t=document.getElementById('cTotal'), n=document.getEl
 function syncCuotaInputs(){ const d=document.getElementById('cDesc'); if(d)cdraft.descripcion=d.value; const t=document.getElementById('cTotal'); if(t)cdraft.total=t.value; const c=document.getElementById('cCuota'); if(c)cdraft.cuota_mensual=c.value; const n=document.getElementById('cN'); if(n)cdraft.n_cuotas=n.value; const i=document.getElementById('cIni'); if(i)cdraft.mes_inicio=i.value; }
 let addMode='gasto'; // pantalla Cargar: 'gasto' | 'cuota'
 let cfgDraft={}, fijoDraft={};   // preservan lo tipeado en Configuración entre re-dibujos
-function cfgIn(el){ cfgDraft[el.dataset.key]=el.value; }
+function cfgIn(el){ cfgDraft[el.dataset.key]=el.value; const k=el.dataset.key||''; if(k.indexOf('income')===0||k.indexOf('aporte')===0) updAporte(); }
+function updAporte(){ const o=document.getElementById('aporteHint'); if(!o) return;
+  const slot=(yo==='Vanessa')?'V':'L';
+  const inc=document.querySelector('[data-key="income'+slot+'"]'), pctEl=document.querySelector('[data-key="aportePct_'+slot+'"]'), monEl=document.querySelector('[data-key="aporteMonto_'+slot+'"]');
+  const income=inc?parseNum(inc.value):0, pct=pctEl?parseNum(pctEl.value):0, mon=monEl?parseNum(monEl.value):0;
+  let ap = pct>0 ? Math.round(income*pct/100) : mon; ap=Math.max(0,Math.min(ap,income));
+  o.textContent = ap>0 ? ('Vas a apartar '+fmt(ap)+(pct>0?(' ('+pct+'% de tu sueldo)'):'')+' apenas cobres.') : 'No estás apartando ahorro este mes.'; }
+let mepRate=0;
+async function fetchMep(){
+  // 1) del lado del navegador (sin backend). 2) si falla (CORS), pruebo el backend como respaldo.
+  try{ const r=await fetch('https://dolarapi.com/v1/dolares/bolsa',{cache:'no-store'}); const d=await r.json(); if(d&&+d.venta>0){ mepRate=+d.venta; return mepRate; } }catch(e){}
+  try{ const d=await api({action:'mep'}); if(d&&+d.venta>0){ mepRate=+d.venta; return mepRate; } }catch(e){}
+  return 0;
+}
 function fijoIn(el){ const box=el.closest?el.closest('.fijoedit'):null; if(!box)return; const fid=box.dataset.fid;
   const cls=(el.className||'').split(' ').find(c=>c.indexOf('fe-')===0);
   const map={'fe-nombre':'nombre','fe-monto':'monto','fe-dia':'dia','fe-quien':'quien','fe-tipo':'tipo'};
@@ -310,10 +324,15 @@ function calcSavingsProj(s){
 }
 function recompute(){
   const s=summary; if(!s||!s.expenses) return;
+  const el=s.elapsed||1, dim=s.dim||30, proj=v=>el?Math.round(v/el*dim):v;
   const mias=s.expenses.filter(e=>e.quien===s.yo);
   const miNC=mias.filter(e=>e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
-  s.savings = s.income - s.miFijos - s.tarjeta - miNC;
-  s.savingsProj = calcSavingsProj(s);
+  const aporte=s.aporte||0;
+  s.disponible = s.income - aporte - s.miFijos - s.tarjeta;
+  s.margen     = s.disponible - miNC;
+  s.margenProj = s.disponible - proj(miNC);
+  s.savings     = aporte + s.margen;      // total (comprometido + margen)
+  s.savingsProj = aporte + s.margenProj;
   s.pct = s.income? s.savings/s.income : 0;
   s.tarjetaMes = mias.filter(e=>e.medio==='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
 }
@@ -464,6 +483,10 @@ function viewBoard(){
   const comer=sumc(['Comer afuera','Delivery']), salidas=sumc(['Salidas']);
   const superShared=(s.expenses||[]).filter(e=>e.vis==='compartido'&&e.cat==='Súper').reduce((a,e)=>a+(+e.monto||0),0);
   const t=s.topes||{};
+  const miNC=mias.filter(e=>e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
+  const aporte=s.aporte||0;
+  const disp=(s.disponible!==undefined? s.disponible : (s.income-aporte-s.miFijos-s.tarjeta));
+  const margen=(s.margen!==undefined? s.margen : (s.savings-aporte));
   const pc=v=>v>=0?'pos':'neg';
   const sProj=(s.savingsProj!==undefined? s.savingsProj : calcSavingsProj(s));
   const projLine=(s.isCur&&sProj!==undefined&&sProj!==null)?'<div class="proj">Proyectado fin de mes <b class="'+pc(sProj)+'">'+fmt(sProj)+'</b></div>':'';
@@ -472,10 +495,20 @@ function viewBoard(){
   const superMeter=(superShared>0||t.super>0)? meter('Súper (hogar)',superShared,t.super,el,dim) : '';
   return insightsCard('board')
   +'<div class="card"><div class="eyebrow">Tu ahorro · '+labelYM(curYM)+'</div>'
-  +'<div class="saldo '+pc(s.savings)+'"><div class="cap">Balance real del mes</div><div class="n '+pc(s.savings)+'">'+fmt(s.savings)+'</div><div class="sub '+pc(s.savings)+'" style="margin-top:2px">'+pctf(s.pct)+' de tu ingreso</div></div>'
+  +(aporte>0
+    ? '<div class="saldo '+pc(s.savings)+'"><div class="cap">Ahorro del mes</div><div class="n '+pc(s.savings)+'">'+fmt(s.savings)+'</div><div class="apbreak">🔒 Comprometido <b>'+fmt(aporte)+'</b> · margen <b class="'+pc(margen)+'">'+fmt(margen)+'</b></div></div>'
+    : '<div class="saldo '+pc(s.savings)+'"><div class="cap">Balance real del mes</div><div class="n '+pc(s.savings)+'">'+fmt(s.savings)+'</div><div class="sub '+pc(s.savings)+'" style="margin-top:2px">'+pctf(s.pct)+' de tu ingreso</div></div>')
   + projLine
   +'<div style="margin-top:12px">'+compBar(s.income||0,s.miFijos||0,s.tarjeta||0,s.savings||0)+'</div>'
   +'<div class="hint" style="margin-top:8px">Cómo se reparte tu ingreso hasta hoy (día '+el+' de '+dim+'). El proyectado estima el cierre al ritmo actual.</div></div>'
+  +(aporte>0
+    ? '<div class="card"><div class="ct">Disponible para gastar</div>'
+      +meter('Gastado',miNC,disp,el,dim)
+      +'<div class="hint">Tu sueldo − tu ahorro apartado ('+fmt(aporte)+') − fijos − tarjeta. Lo que no gastes de acá se suma al ahorro como margen; si te pasás, comés parte del ahorro apartado.</div></div>'
+    : '')
+  +((s.aporteAcum&&s.aporteAcum.pesos>0)
+    ? '<div class="card"><div class="ct">Ahorro apartado en '+s.aporteAcum.anio+'</div><div class="big pos" style="margin-top:4px">'+fmt(s.aporteAcum.pesos)+'</div><div class="hint">Lo que fuiste apartando al cobrar, en '+s.aporteAcum.meses+' mes'+(s.aporteAcum.meses===1?'':'es')+' del año.'+(s.aporteAcum.usd>0?' Objetivo acumulado en dólares: USD '+s.aporteAcum.usd+'.':'')+'</div></div>'
+    : '')
   +tarjetasCard(s)
   +'<div class="card"><div class="ct">Topes del mes</div>'
     +meter('Comer + delivery',comer,t.comer,el,dim)
@@ -716,20 +749,26 @@ function viewCfg(){
   +'</div>'
   +'<div class="hint" style="margin-top:8px">El PIN bloquea este teléfono al abrir la app. Es protección local (privacidad blanda): no cifra los datos del Sheet.</div></div>'
   +'<div class="card"><div class="eyebrow">Lo tuyo · '+labelYM(curYM)+'</div>'
-  +'<div class="hint">Estos son <b>tus</b> datos (solo vos los ves). El sueldo y la tarjeta son <b>por mes</b>: lo que cargás acá queda guardado en '+labelYM(curYM)+' y no toca los otros meses. El tope y los avisos son ajustes fijos.</div>'
-  +'<div class="blk">Sueldo y tarjeta de '+labelYM(curYM)+'</div>'
-  +row('income'+slot,'Tu sueldo de '+labelYM(curYM))+row('tarjetas_'+slot,'Tu tarjeta a pagar','total de tu resumen de este mes')
-  +'<div class="blk">Ajustes fijos (valen para todos los meses)</div>'
+  +'<div class="hint">Solo vos ves esto. El sueldo, la tarjeta y tu tope de tarjeta son <b>por mes</b>: lo que cargás queda en '+labelYM(curYM)+' y no toca otros meses. Los avisos por mail son fijos.</div>'
+  +'<div class="blk">Sueldo, tarjeta y tope · '+labelYM(curYM)+'</div>'
+  +row('income'+slot,'Tu sueldo')+row('tarjetas_'+slot,'Tu tarjeta a pagar','total de tu resumen del mes')
   +row('tope_tarjeta_'+slot,'Tu tope de tarjeta','0 = sin tope')
-  +'<div class="blk">Tus avisos por mail</div>'
+  +'<div class="blk">Ahorro del mes (apartado al cobrar)</div>'
+  +row('aporteMonto_'+slot,'Apartar un monto fijo','$ · dejá 0 si usás % o USD')
+  +row('aportePct_'+slot,'…o un % de tu sueldo','solo el número, ej: 10',true)
+  +'<div class="cfgrow"><span class="k">…o en dólares (MEP)<small>USD a apartar</small></span><input class="ci" id="aporteUsd" data-key="aporteUsd_'+slot+'" onfocus="this.select()" oninput="cfgIn(this)" inputmode="decimal" placeholder="ej: 250" value="'+dv('aporteUsd_'+slot,true)+'"></div>'
+  +'<button class="btn ghost" id="bMep" style="margin-top:6px">💵 Convertir USD → $ al MEP de hoy</button>'
+  +'<div id="mepHint" class="mf" style="margin-top:4px"></div>'
+  +'<div id="aporteHint" class="mf" style="margin-top:2px"></div>'
+  +'<div class="blk">Tus avisos por mail (fijos)</div>'
   +sel('rep_pagos_'+slot,'Aviso de pagos',[['off','No enviar'],['dia','El día del vencimiento'],['previo','El día anterior']])
   +sel('rep_resumen_'+slot,'Resumen completo',[['off','No enviar'],['semanal','Semanal (lunes)'],['mensual','Mensual (día 1)']])
   +'</div>'
-  +'<div class="card"><div class="eyebrow">Del hogar (compartido)</div>'
-  +'<div class="hint">Los topes compartidos. <b>Ya vienen configurados</b>: tocá solo si algo cambió. Lo editan cualquiera de los dos.</div>'
-  +'<div class="blk">Topes variables (dinámicos)</div>'
-  +row('pct_comer','Comer afuera (% del ingreso de cada uno)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% del ingreso de cada uno)','sugerido 5%',true)
-  +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" data-key="cap_super" inputmode="decimal" value="'+fmtNum(v('cap_super'))+'"></div>'
+  +'<div class="card"><div class="eyebrow">Del hogar · '+labelYM(curYM)+'</div>'
+  +'<div class="hint">Topes compartidos, <b>por mes</b>: podés aflojar o apretar según el mes (un mes con viaje, unas fiestas, etc.). Los editan los dos. Si no los tocás, siguen con el último valor.</div>'
+  +'<div class="blk">Topes de '+labelYM(curYM)+'</div>'
+  +row('pct_comer','Comer afuera (% de tu ingreso)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% de tu ingreso)','sugerido 5%',true)
+  +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value);cfgIn(this)" data-key="cap_super" inputmode="decimal" value="'+dv('cap_super')+'"></div>'
   +(s&&s.superSug?'<div class="suggest" id="useSug">↳ usar sugerencia '+fmt(s.superSug)+'</div>':'')
   +'</div>'
   +'<div class="card" style="margin-bottom:80px"><div class="eyebrow">Gastos fijos</div>'
@@ -742,6 +781,7 @@ function viewCfg(){
 function wire(){
   try{updCalc();}catch(e){}
   try{updCuota();}catch(e){}
+  try{updAporte();}catch(e){}
   document.querySelectorAll('[data-dwho]').forEach(b=>b.onclick=()=>{dashWho=b.dataset.dwho;render();});
   document.querySelectorAll('[data-addmode]').forEach(b=>b.onclick=()=>{addMode=b.dataset.addmode;render();});
   function syncAddInputs(){ const a=document.getElementById('iAmt'); if(a)draft.monto=a.value; const md=document.getElementById('iMedio'); if(md)draft.medio=md.value; const f=document.getElementById('iFecha'); if(f)draft.fecha=f.value; const nt=document.getElementById('iNota'); if(nt)draft.nota=nt.value; }
@@ -781,7 +821,23 @@ function wire(){
     cuotas=await api({action:'cuotas',ym:curYM});dash=null;render();
     toast('✓ Cuota agregada: '+fmtd(cuota)+' × '+n);
   };
-  const us=document.getElementById('useSug'); if(us)us.onclick=()=>{document.querySelector('[data-key="cap_super"]').value=fmtNum(summary.superSug);};
+  const us=document.getElementById('useSug'); if(us)us.onclick=()=>{const el=document.querySelector('[data-key="cap_super"]'); if(el){el.value=fmtNum(summary.superSug); cfgDraft['cap_super']=el.value;}};
+  const bMep=document.getElementById('bMep'); if(bMep)bMep.onclick=async()=>{
+    const slot=(yo==='Vanessa')?'V':'L';
+    const usdEl=document.getElementById('aporteUsd'); const usd=usdEl?parseNum(usdEl.value):0;
+    const hint=document.getElementById('mepHint');
+    if(!usd){ if(hint)hint.textContent='Poné cuántos USD querés apartar.'; return; }
+    bMep.textContent='Buscando cotización…'; bMep.disabled=true;
+    const rate=await fetchMep();
+    bMep.disabled=false; bMep.textContent='💵 Convertir USD → $ al MEP de hoy';
+    if(!rate){ if(hint)hint.textContent='No pude traer la cotización ahora. Cargá el monto en $ a mano.'; return; }
+    const pesos=Math.round(usd*rate);
+    const monEl=document.querySelector('[data-key="aporteMonto_'+slot+'"]'); if(monEl){ monEl.value=fmtNum(pesos); cfgDraft['aporteMonto_'+slot]=monEl.value; }
+    const pctEl=document.querySelector('[data-key="aportePct_'+slot+'"]'); if(pctEl){ pctEl.value=''; cfgDraft['aportePct_'+slot]=''; }
+    cfgDraft['aporteUsd_'+slot]=String(usd);
+    if(hint)hint.textContent='USD '+usd+' × '+fmt(rate)+' (MEP) = '+fmt(pesos)+'. Guardá el mes para fijar este monto.';
+    updAporte();
+  };
   // reclasificar visibilidad de un movimiento (privado <-> compartido)
   document.querySelectorAll('[data-vistoggle]').forEach(b=>b.onclick=()=>{
     const id=b.dataset.vistoggle, nv=(b.dataset.vis==='compartido')?'privado':'compartido';
@@ -831,15 +887,10 @@ function wire(){
         quien:fe.querySelector('.fe-quien').value, tipo:fe.querySelector('.fe-tipo').value });
     });
     bCfg.textContent='Guardando…'; bCfg.disabled=true;
-    // separo lo que es por-mes (sueldo/tarjeta) de lo global (topes, avisos)
+    // separo lo que es por-mes (sueldo, tarjeta y topes) de lo global (solo avisos)
     const mesPayload={ym:curYM}, globalUp={}; let hayMes=false;
-    Object.keys(up).forEach(k=>{
-      if(k==='incomeL'){mesPayload.incomeL=up[k];hayMes=true;}
-      else if(k==='incomeV'){mesPayload.incomeV=up[k];hayMes=true;}
-      else if(k==='tarjetas_L'){mesPayload.tarjL=up[k];hayMes=true;}
-      else if(k==='tarjetas_V'){mesPayload.tarjV=up[k];hayMes=true;}
-      else globalUp[k]=up[k];
-    });
+    const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
+    Object.keys(up).forEach(k=>{ if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
     try{
       fijoUpdates.forEach(u=>post({action:'updateFijo', id:u.id, nombre:u.nombre, monto:u.monto, dia:u.dia, quien:u.quien, tipo:u.tipo}));
       if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload));         // sueldo/tarjeta DEL MES
