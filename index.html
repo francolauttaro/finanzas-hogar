@@ -716,9 +716,10 @@ function viewCfg(){
   +'</div>'
   +'<div class="hint" style="margin-top:8px">El PIN bloquea este teléfono al abrir la app. Es protección local (privacidad blanda): no cifra los datos del Sheet.</div></div>'
   +'<div class="card"><div class="eyebrow">Lo tuyo · '+labelYM(curYM)+'</div>'
-  +'<div class="hint">Estos son <b>tus</b> datos (solo vos los ves). Al empezar el mes revisá tu sueldo y el total de tu tarjeta a pagar; con eso alcanza. El resto ya está listo.</div>'
-  +'<div class="blk">Tu ingreso y tu tarjeta</div>'
-  +row('income'+slot,'Tu sueldo')+row('tarjetas_'+slot,'Tu tarjeta a pagar','total de tu resumen')
+  +'<div class="hint">Estos son <b>tus</b> datos (solo vos los ves). El sueldo y la tarjeta son <b>por mes</b>: lo que cargás acá queda guardado en '+labelYM(curYM)+' y no toca los otros meses. El tope y los avisos son ajustes fijos.</div>'
+  +'<div class="blk">Sueldo y tarjeta de '+labelYM(curYM)+'</div>'
+  +row('income'+slot,'Tu sueldo de '+labelYM(curYM))+row('tarjetas_'+slot,'Tu tarjeta a pagar','total de tu resumen de este mes')
+  +'<div class="blk">Ajustes fijos (valen para todos los meses)</div>'
   +row('tope_tarjeta_'+slot,'Tu tope de tarjeta','0 = sin tope')
   +'<div class="blk">Tus avisos por mail</div>'
   +sel('rep_pagos_'+slot,'Aviso de pagos',[['off','No enviar'],['dia','El día del vencimiento'],['previo','El día anterior']])
@@ -830,12 +831,22 @@ function wire(){
         quien:fe.querySelector('.fe-quien').value, tipo:fe.querySelector('.fe-tipo').value });
     });
     bCfg.textContent='Guardando…'; bCfg.disabled=true;
+    // separo lo que es por-mes (sueldo/tarjeta) de lo global (topes, avisos)
+    const mesPayload={ym:curYM}, globalUp={}; let hayMes=false;
+    Object.keys(up).forEach(k=>{
+      if(k==='incomeL'){mesPayload.incomeL=up[k];hayMes=true;}
+      else if(k==='incomeV'){mesPayload.incomeV=up[k];hayMes=true;}
+      else if(k==='tarjetas_L'){mesPayload.tarjL=up[k];hayMes=true;}
+      else if(k==='tarjetas_V'){mesPayload.tarjV=up[k];hayMes=true;}
+      else globalUp[k]=up[k];
+    });
     try{
       fijoUpdates.forEach(u=>post({action:'updateFijo', id:u.id, nombre:u.nombre, monto:u.monto, dia:u.dia, quien:u.quien, tipo:u.tipo}));
-      await api({action:'saveConfig', updates:JSON.stringify(up), ym:curYM});   // ESPERA confirmación
+      if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload));         // sueldo/tarjeta DEL MES
+      if(Object.keys(globalUp).length) await api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}); // topes/avisos globales
       cfgDraft={}; fijoDraft={};
-      const sm=await api({action:'summary',ym:curYM});                          // recarga ya confirmada
-      if(sm&&!sm.error){ summary=sm; Object.keys(up).forEach(k=>{ summary.config=summary.config||{}; summary.config[k]=up[k]; }); }
+      const sm=await api({action:'summary',ym:curYM});                             // recarga ya confirmada
+      if(sm&&!sm.error){ summary=sm; summary.config=summary.config||{}; Object.keys(up).forEach(k=>{ summary.config[k]=up[k]; }); }
       toast('✓ Guardado');
     }catch(e){ toast('No se pudo guardar del todo. Revisá la conexión y probá de nuevo.'); }
     finally{ dash=null; render(); }
