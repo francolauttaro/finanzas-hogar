@@ -786,12 +786,20 @@ function wire(){
   });
   // agregar fijo
   const bAF=document.getElementById('bAddFijo'); if(bAF)bAF.onclick=async()=>{
-    bAF.textContent='Agregando…'; post({action:'addFijo',nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1});
-    setTimeout(async()=>{ summary=await api({action:'summary',ym:curYM}); render(); }, 1200);
+    bAF.textContent='Agregando…'; bAF.disabled=true;
+    try{
+      const res=await api({action:'addFijo',nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1});
+      if(res&&res.ok&&res.fijo&&summary){ summary.misPersonales=(summary.misPersonales||[]).concat([res.fijo]); }
+      else { const sm=await api({action:'summary',ym:curYM}); if(sm&&!sm.error) summary=sm; }
+    }catch(e){ toast('No se pudo agregar. Probá de nuevo.'); }
+    finally{ render(); }   // SIEMPRE re-renderiza: el botón nunca queda en "Agregando…"
   };
-  // borrar fijo
-  document.querySelectorAll('[data-delf]').forEach(b=>b.onclick=async()=>{ if(!confirm('¿Eliminar este gasto fijo?'))return;
-    post({action:'deleteFijo',id:b.dataset.delf}); setTimeout(async()=>{ summary=await api({action:'summary',ym:curYM}); render(); }, 1000); });
+  // borrar fijo (optimista: desaparece al instante)
+  document.querySelectorAll('[data-delf]').forEach(b=>b.onclick=()=>{ if(!confirm('¿Eliminar este gasto fijo?'))return;
+    post({action:'deleteFijo',id:b.dataset.delf});
+    if(summary){ const keep=f=>String(f.id)!==String(b.dataset.delf); summary.misPersonales=(summary.misPersonales||[]).filter(keep); summary.fijosHogar=(summary.fijosHogar||[]).filter(keep); }
+    render();
+  });
   const bCfg=document.getElementById('bCfg'); if(bCfg)bCfg.onclick=async()=>{
     const up={};
     document.querySelectorAll('.ci').forEach(i=>{if(i.value!=='')up[i.dataset.key]=parseNum(i.value);});
