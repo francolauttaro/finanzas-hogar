@@ -165,6 +165,13 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .paychk{width:24px;height:24px;border-radius:7px;border:1.5px solid var(--line);background:#fff;color:#fff;font-size:14px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .paychk.on{background:var(--pine);border-color:var(--pine)}
 .visx{background:none;border:none;font-size:15px;cursor:pointer;flex:none;padding:0 3px;line-height:1}
+.monthbanner{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--pine);color:#fff;border-radius:14px;padding:12px 16px;margin-bottom:12px;box-shadow:var(--sh)}
+.monthbanner.warn{background:var(--clay)}
+.monthbanner .mbtxt{font-size:13px;font-weight:600;line-height:1.25;opacity:.95}
+.monthbanner .mbtxt b{font-size:19px;font-weight:800}
+.monthbanner .mbnav{display:flex;gap:6px;flex:none}
+.monthbanner .mbnav button{width:40px;height:40px;border:none;border-radius:10px;background:rgba(255,255,255,.18);color:#fff;font-size:22px;font-weight:800;cursor:pointer;line-height:1}
+.monthbanner .mbnav button:active{background:rgba(255,255,255,.32)}
 .frow .fd{flex:1;font-size:13.5px;font-weight:600}
 .frow .fd small{display:block;color:var(--muted);font-size:11.5px;font-weight:500}
 .frow.paid .fd{color:var(--muted);text-decoration:line-through}
@@ -232,6 +239,12 @@ function updCuota(){ const t=document.getElementById('cTotal'), n=document.getEl
   const tot=parseNum(t.value), c=parseInt(n.value)||0; o.textContent = (tot>0&&c>0)? ('Cada cuota: '+fmtd(Math.round(tot/c*100)/100)+' · '+c+' cuotas') : ''; }
 function syncCuotaInputs(){ const d=document.getElementById('cDesc'); if(d)cdraft.descripcion=d.value; const t=document.getElementById('cTotal'); if(t)cdraft.total=t.value; const c=document.getElementById('cCuota'); if(c)cdraft.cuota_mensual=c.value; const n=document.getElementById('cN'); if(n)cdraft.n_cuotas=n.value; const i=document.getElementById('cIni'); if(i)cdraft.mes_inicio=i.value; }
 let addMode='gasto'; // pantalla Cargar: 'gasto' | 'cuota'
+let cfgDraft={}, fijoDraft={};   // preservan lo tipeado en Configuración entre re-dibujos
+function cfgIn(el){ cfgDraft[el.dataset.key]=el.value; }
+function fijoIn(el){ const box=el.closest?el.closest('.fijoedit'):null; if(!box)return; const fid=box.dataset.fid;
+  const cls=(el.className||'').split(' ').find(c=>c.indexOf('fe-')===0);
+  const map={'fe-nombre':'nombre','fe-monto':'monto','fe-dia':'dia','fe-quien':'quien','fe-tipo':'tipo'};
+  if(map[cls]){ fijoDraft[fid]=fijoDraft[fid]||{}; fijoDraft[fid][map[cls]]=el.value; } }
 let dashWho='yo'; // selector de Evolución: 'yo' | 'hogar'
 
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
@@ -280,7 +293,7 @@ async function fetchBundle(){
   return {summary:d.summary,dash:d.dashboard,cuotas:d.cuotas};
 }
 let _rc=null, lastSave=0;
-function reconciliar(delay){ clearTimeout(_rc); _rc=setTimeout(async()=>{ try{ summary=await api({action:'summary',ym:curYM}); dash=null; render(); }catch(e){} }, delay||2500); }
+function reconciliar(delay){ clearTimeout(_rc); _rc=setTimeout(async()=>{ const ae=document.activeElement; if(tab==='cfg'||(ae&&/INPUT|SELECT|TEXTAREA/.test(ae.tagName))) return; try{ summary=await api({action:'summary',ym:curYM}); dash=null; render(); }catch(e){} }, delay||2500); }
 function toast(msg){
   let t=document.getElementById('toast');
   if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
@@ -337,6 +350,7 @@ function shiftMonth(d){
   const[y,m]=curYM.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
   curYM=nd.getFullYear()+'-'+String(nd.getMonth()+1).padStart(2,'0');
+  cfgDraft={}; fijoDraft={};   // al cambiar de mes, no arrastres ediciones a medio hacer
   dash=null;cuotas=null;loadAll();
 }
 
@@ -677,18 +691,23 @@ function viewCfg(){
   if(c['rep_pagos_'+slot]===undefined)    c['rep_pagos_'+slot]=c['rep_pagos']||'off';
   if(c['rep_resumen_'+slot]===undefined)  c['rep_resumen_'+slot]=c['rep_resumen']||'off';
   const v=k=>c[k]!==undefined?c[k]:'';
-  const row=(k,lab,hint,plain)=>{const val=plain?v(k):fmtNum(v(k));const oi=plain?'':' oninput="this.value=fmtNum(this.value)"';return '<div class="cfgrow"><span class="k">'+lab+(hint?'<small>'+hint+'</small>':'')+'</span><input class="ci" onfocus="this.select()"'+oi+' data-key="'+k+'" inputmode="decimal" value="'+val+'"></div>';};
-  const sel=(k,lab,opts)=>{const cur=String(v(k));return '<div class="cfgrow"><span class="k">'+lab+'</span><select class="cs" data-key="'+k+'">'+opts.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>';};
+  const dv=(k,plain)=> cfgDraft[k]!==undefined ? cfgDraft[k] : (plain? v(k) : fmtNum(v(k)));
+  const row=(k,lab,hint,plain)=>{const oi=plain?'oninput="cfgIn(this)"':'oninput="this.value=fmtNum(this.value);cfgIn(this)"';return '<div class="cfgrow"><span class="k">'+lab+(hint?'<small>'+hint+'</small>':'')+'</span><input class="ci" onfocus="this.select()" '+oi+' data-key="'+k+'" inputmode="decimal" value="'+dv(k,plain)+'"></div>';};
+  const sel=(k,lab,opts)=>{const cur=String(cfgDraft[k]!==undefined?cfgDraft[k]:v(k));return '<div class="cfgrow"><span class="k">'+lab+'</span><select class="cs" data-key="'+k+'" onchange="cfgIn(this)">'+opts.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>';};
   const allF=[].concat(s&&s.fijosHogar||[], s&&s.misPersonales||[]).sort((a,b)=>(a.id||0)-(b.id||0));
   const opt=(list,cur)=>list.map(o=>'<option'+(o===cur?' selected':'')+'>'+o+'</option>').join('');
+  const fd=(fid,campo,def)=>{ const d=fijoDraft[fid]; return (d&&d[campo]!==undefined)? d[campo] : def; };
   const fijoEdit=f=>'<div class="fijoedit" data-fid="'+f.id+'">'
-    +'<input class="fe-nombre" onfocus="this.select()" value="'+(f.nombre||'')+'">'
-    +'<div class="fe-line"><input class="fe-monto" onfocus="this.select()" oninput="this.value=fmtNum(this.value)" inputmode="decimal" value="'+fmtNum(f.monto)+'" placeholder="$">'
-    +'<input class="fe-dia" onfocus="this.select()" inputmode="numeric" value="'+(f.dia||'')+'" placeholder="día">'
+    +'<input class="fe-nombre" onfocus="this.select()" oninput="fijoIn(this)" value="'+fd(f.id,'nombre',(f.nombre||''))+'">'
+    +'<div class="fe-line"><input class="fe-monto" onfocus="this.select()" oninput="this.value=fmtNum(this.value);fijoIn(this)" inputmode="decimal" value="'+fd(f.id,'monto',fmtNum(f.monto))+'" placeholder="$">'
+    +'<input class="fe-dia" onfocus="this.select()" oninput="fijoIn(this)" inputmode="numeric" value="'+fd(f.id,'dia',(f.dia||''))+'" placeholder="día">'
     +'<button class="fe-del" data-delf="'+f.id+'">×</button></div>'
-    +'<div class="fe-line"><select class="fe-quien">'+opt(['Lautaro','Vanessa','Ambos'],f.quien)+'</select>'
-    +'<select class="fe-tipo">'+opt(['Hogar','Personal'],f.tipo)+'</select></div></div>';
-  return '<div class="card"><div class="eyebrow">Cuenta</div>'
+    +'<div class="fe-line"><select class="fe-quien" onchange="fijoIn(this)">'+opt(['Lautaro','Vanessa','Ambos'],fd(f.id,'quien',f.quien))+'</select>'
+    +'<select class="fe-tipo" onchange="fijoIn(this)">'+opt(['Hogar','Personal'],fd(f.id,'tipo',f.tipo))+'</select></div></div>';
+  const realYM=hoyISO().slice(0,7);
+  const noActual = curYM!==realYM;
+  return '<div class="monthbanner'+(noActual?' warn':'')+'"><div class="mbtxt">Estás configurando<br><b>'+labelYM(curYM)+'</b>'+(noActual?' · no es el mes actual':'')+'</div><div class="mbnav"><button data-mshift="-1">‹</button><button data-mshift="1">›</button></div></div>'
+  +'<div class="card"><div class="eyebrow">Cuenta</div>'
   +'<div class="cfgrow"><span class="k">Usuario<small>en este teléfono</small></span><span style="font-weight:800;color:var(--pine);font-size:16px">'+(yo||'—')+'</span></div>'
   +'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
   +'<button class="btn ghost" id="bSwitch" style="flex:1;min-width:120px">Cambiar usuario</button>'
@@ -804,18 +823,25 @@ function wire(){
     const up={};
     document.querySelectorAll('.ci').forEach(i=>{if(i.value!=='')up[i.dataset.key]=parseNum(i.value);});
     document.querySelectorAll('.cs').forEach(i=>{up[i.dataset.key]=i.value;});
-    // guardar cambios de cada fijo
+    const fijoUpdates=[];
     document.querySelectorAll('.fijoedit').forEach(fe=>{
-      post({action:'updateFijo', id:fe.dataset.fid,
-        nombre:fe.querySelector('.fe-nombre').value,
-        monto:parseNum(fe.querySelector('.fe-monto').value),
-        dia:parseInt(fe.querySelector('.fe-dia').value)||0,
-        quien:fe.querySelector('.fe-quien').value,
-        tipo:fe.querySelector('.fe-tipo').value });
+      fijoUpdates.push({ id:fe.dataset.fid, nombre:fe.querySelector('.fe-nombre').value,
+        monto:parseNum(fe.querySelector('.fe-monto').value), dia:parseInt(fe.querySelector('.fe-dia').value)||0,
+        quien:fe.querySelector('.fe-quien').value, tipo:fe.querySelector('.fe-tipo').value });
     });
-    bCfg.textContent='Guardando…';post({action:'saveConfig',updates:up,ym:curYM});toast('✓ Mes guardado');dash=null;reconciliar(1800);
+    bCfg.textContent='Guardando…'; bCfg.disabled=true;
+    try{
+      fijoUpdates.forEach(u=>post({action:'updateFijo', id:u.id, nombre:u.nombre, monto:u.monto, dia:u.dia, quien:u.quien, tipo:u.tipo}));
+      await api({action:'saveConfig', updates:JSON.stringify(up), ym:curYM});   // ESPERA confirmación
+      cfgDraft={}; fijoDraft={};
+      const sm=await api({action:'summary',ym:curYM});                          // recarga ya confirmada
+      if(sm&&!sm.error){ summary=sm; Object.keys(up).forEach(k=>{ summary.config=summary.config||{}; summary.config[k]=up[k]; }); }
+      toast('✓ Guardado');
+    }catch(e){ toast('No se pudo guardar del todo. Revisá la conexión y probá de nuevo.'); }
+    finally{ dash=null; render(); }
   };
   // ---- Cuenta: cambiar usuario / PIN ----
+  document.querySelectorAll('[data-mshift]').forEach(b=>b.onclick=()=>shiftMonth(+b.dataset.mshift));
   const bSwitch=document.getElementById('bSwitch'); if(bSwitch)bSwitch.onclick=()=>{ if(!confirm('¿Cambiar de usuario en este teléfono?'))return; localStorage.removeItem('fh_yo'); yo=''; boot(); };
   const bPin=document.getElementById('bPin'); if(bPin)bPin.onclick=()=>{
     if(getPin()){ if(confirm('El PIN ya está activo. ¿Querés cambiarlo?')) askNewPin(); }
