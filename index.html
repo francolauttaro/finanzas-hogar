@@ -252,7 +252,7 @@ function updAporte(){ const o=document.getElementById('aporteHint'); if(!o) retu
   const income=inc?parseNum(inc.value):0, pct=pctEl?parseNum(pctEl.value):0, mon=monEl?parseNum(monEl.value):0;
   let ap = pct>0 ? Math.round(income*pct/100) : mon; ap=Math.max(0,Math.min(ap,income));
   o.textContent = ap>0 ? ('Vas a apartar '+fmt(ap)+(pct>0?(' ('+pct+'% de tu sueldo)'):'')+' apenas cobres.') : 'No estás apartando ahorro este mes.'; }
-function pnKey(k){ const el=document.querySelector('[data-key="'+k+'"]'); return el?parseNum(el.value):0; }
+function pnKey(k){ const el=document.querySelector('[data-key="'+k+'"]'); if(!el)return 0; return /pct/i.test(k)? (parseFloat(String(el.value).replace(',','.'))||0) : parseNum(el.value); }
 function sumMiFijosFromForm(){ let miF=0; const share=(summary&&summary.miShare)||0;
   document.querySelectorAll('.fijoedit').forEach(fe=>{ const monto=parseNum(fe.querySelector('.fe-monto').value); const quien=fe.querySelector('.fe-quien').value, tipo=fe.querySelector('.fe-tipo').value;
     if(tipo==='Hogar'){ if(quien==='Ambos') miF+=Math.round(monto*share); else if(quien===yo) miF+=monto; } else miF+=monto; });
@@ -542,9 +542,6 @@ function viewBoard(){
       +meter('Gastado',miNC,disp,el,dim)
       +'<div class="hint">Tu sueldo − tu ahorro apartado ('+fmt(aporte)+') − fijos − tarjeta. Lo que no gastes de acá se suma al ahorro como margen; si te pasás, comés parte del ahorro apartado.</div></div>'
     : '')
-  +((s.aporteAcum&&s.aporteAcum.pesos>0)
-    ? '<div class="card"><div class="ct">Ahorro apartado en '+s.aporteAcum.anio+'</div><div class="big pos" style="margin-top:4px">'+fmt(s.aporteAcum.pesos)+'</div><div class="hint">Lo que fuiste apartando al cobrar, en '+s.aporteAcum.meses+' mes'+(s.aporteAcum.meses===1?'':'es')+' del año.'+(s.aporteAcum.usd>0?' Objetivo acumulado en dólares: USD '+s.aporteAcum.usd+'.':'')+'</div></div>'
-    : '')
   +tarjetasCard(s)
   +'<div class="card"><div class="ct">Topes del mes</div>'
     +meter('Comer + delivery',comer,t.comer,el,dim)
@@ -718,6 +715,9 @@ function viewDash(){
     html+='<div class="blk">Tus fijos</div>'+fijHTML+'<div class="ftot">Subtotal fijos '+fmt(fijos)+pctI(fijos)+'</div>';
     html+='<div class="blk">Tu tarjeta a pagar</div><div class="xrow"><span class="d">Total de tu resumen</span><span class="a">'+fmt(tarjeta)+pctI(tarjeta)+'</span></div>';
     html+='<div class="mf" style="margin-top:8px">Los porcentajes son sobre tu ingreso ('+fmt(ingreso)+').</div></div>';
+    if(s.aporteAcum&&s.aporteAcum.pesos>0){
+      html+='<div class="card"><div class="ct">Ahorro apartado en '+s.aporteAcum.anio+'</div><div class="big pos" style="margin-top:4px">'+fmt(s.aporteAcum.pesos)+'</div><div class="hint">Lo que fuiste apartando al cobrar (pagarte a vos primero), en '+s.aporteAcum.meses+' mes'+(s.aporteAcum.meses===1?'':'es')+' del año.'+(s.aporteAcum.usd>0?' Objetivo acumulado en dólares: USD '+s.aporteAcum.usd+'.':'')+'</div></div>';
+    }
     // 6 meses (gasto + ahorro)
     const sy=d.seriesYo||[];
     if(sy.length){
@@ -765,7 +765,7 @@ function viewCfg(){
   if(c['rep_pagos_'+slot]===undefined)    c['rep_pagos_'+slot]=c['rep_pagos']||'off';
   if(c['rep_resumen_'+slot]===undefined)  c['rep_resumen_'+slot]=c['rep_resumen']||'off';
   const v=k=>c[k]!==undefined?c[k]:'';
-  const dv=(k,plain)=> cfgDraft[k]!==undefined ? cfgDraft[k] : (plain? v(k) : fmtNum(v(k)));
+  const dv=(k,plain)=> cfgDraft[k]!==undefined ? cfgDraft[k] : (/pct/i.test(k)? String(v(k)).replace('.',',') : (plain? v(k) : fmtNum(v(k))));
   const row=(k,lab,hint,plain)=>{const oi=plain?'oninput="cfgIn(this)"':'oninput="this.value=fmtNum(this.value);cfgIn(this)"';return '<div class="cfgrow"><span class="k">'+lab+(hint?'<small>'+hint+'</small>':'')+'</span><input class="ci" onfocus="this.select()" '+oi+' data-key="'+k+'" inputmode="decimal" value="'+dv(k,plain)+'"></div>';};
   const sel=(k,lab,opts)=>{const cur=String(cfgDraft[k]!==undefined?cfgDraft[k]:v(k));return '<div class="cfgrow"><span class="k">'+lab+'</span><select class="cs" data-key="'+k+'" onchange="cfgIn(this)">'+opts.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>';};
   const allF=[].concat(s&&s.fijosHogar||[], s&&s.misPersonales||[]).sort((a,b)=>(a.id||0)-(b.id||0));
@@ -923,7 +923,7 @@ function wire(){
   });
   const bCfg=document.getElementById('bCfg'); if(bCfg)bCfg.onclick=async()=>{
     const up={};
-    document.querySelectorAll('.ci').forEach(i=>{if(i.value!=='')up[i.dataset.key]=parseNum(i.value);});
+    document.querySelectorAll('.ci').forEach(i=>{if(i.value!=='')up[i.dataset.key]= /pct/i.test(i.dataset.key)? (parseFloat(String(i.value).replace(',','.'))||0) : parseNum(i.value);});
     document.querySelectorAll('.cs').forEach(i=>{up[i.dataset.key]=i.value;});
     const fijoUpdates=[];
     document.querySelectorAll('.fijoedit').forEach(fe=>{
@@ -933,15 +933,16 @@ function wire(){
     });
     bCfg.textContent='Guardando…'; bCfg.disabled=true;
     // separo lo que es por-mes (sueldo, tarjeta y topes) de lo global (solo avisos)
-    const mesPayload={ym:curYM}, globalUp={}; let hayMes=false;
+    const mesPayload={ym:curYM}, globalUp={}; let hayMes=false; const cur=(summary&&summary.config)||{};
     const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',cap_empleada:'cap_empleada',cap_agua:'cap_agua',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
-    Object.keys(up).forEach(k=>{ if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
+    Object.keys(up).forEach(k=>{ if(String(up[k])===String(cur[k]!==undefined?cur[k]:'')) return;   // sin cambios: no lo mando
+      if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
     post({action:'saveFijos', ym:curYM, fijos:fijoUpdates});   // POST atómico (no cuelga ni tira error)
     let saveOk=true;
-    try{
-      if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload), 25000);         // sueldo/tarjeta/topes DEL MES
-      if(Object.keys(globalUp).length) await api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}, 25000); // avisos globales
-    }catch(e){ saveOk=false; }
+    const tasks=[];
+    if(hayMes) tasks.push(api(Object.assign({action:'saveMes'}, mesPayload), 25000));                 // sueldo/tarjeta/topes DEL MES
+    if(Object.keys(globalUp).length) tasks.push(api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}, 25000)); // avisos globales
+    try{ if(tasks.length) await Promise.all(tasks); }catch(e){ saveOk=false; }   // en paralelo = más rápido
     cfgDraft={}; fijoDraft={};
     // aplico lo guardado localmente SIEMPRE (así no revierte, pase lo que pase con la recarga)
     if(summary){
