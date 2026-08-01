@@ -158,6 +158,10 @@ input:focus,select:focus{outline:none;border-color:var(--pine);box-shadow:0 0 0 
 .saldo .n.pos{color:var(--pine)}.saldo .n.neg{color:var(--clay)}
 .saldo .cap{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
 .apbreak{margin-top:6px;font-size:13px;font-weight:600;color:var(--ink2)}.apbreak b{font-weight:800;color:var(--ink)}.apbreak b.neg{color:var(--clay)}
+.warnbox{margin-top:10px;padding:10px 12px;border-radius:12px;background:#fbecea;border:1.5px solid var(--clay);color:#8a2c1e;font-size:13px;font-weight:600;line-height:1.4}
+.warnbox b{font-weight:800}
+.okbox{margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--paper);border:1px solid var(--line);color:var(--ink2);font-size:13px;font-weight:600;line-height:1.4}
+.okbox b{font-weight:800;color:var(--pine)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .chip{padding:6px 10px;border:1.5px solid var(--line);background:#fff;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer}
 .chip.on{background:var(--pine);color:#fff;border-color:var(--pine)}
@@ -241,13 +245,34 @@ function updCuota(){ const t=document.getElementById('cTotal'), n=document.getEl
 function syncCuotaInputs(){ const d=document.getElementById('cDesc'); if(d)cdraft.descripcion=d.value; const t=document.getElementById('cTotal'); if(t)cdraft.total=t.value; const c=document.getElementById('cCuota'); if(c)cdraft.cuota_mensual=c.value; const n=document.getElementById('cN'); if(n)cdraft.n_cuotas=n.value; const i=document.getElementById('cIni'); if(i)cdraft.mes_inicio=i.value; }
 let addMode='gasto'; // pantalla Cargar: 'gasto' | 'cuota'
 let cfgDraft={}, fijoDraft={};   // preservan lo tipeado en Configuración entre re-dibujos
-function cfgIn(el){ cfgDraft[el.dataset.key]=el.value; const k=el.dataset.key||''; if(k.indexOf('income')===0||k.indexOf('aporte')===0) updAporte(); }
+function cfgIn(el){ cfgDraft[el.dataset.key]=el.value; const k=el.dataset.key||''; if(k.indexOf('income')===0||k.indexOf('aporte')===0) updAporte(); updPresupuesto(); }
 function updAporte(){ const o=document.getElementById('aporteHint'); if(!o) return;
   const slot=(yo==='Vanessa')?'V':'L';
   const inc=document.querySelector('[data-key="income'+slot+'"]'), pctEl=document.querySelector('[data-key="aportePct_'+slot+'"]'), monEl=document.querySelector('[data-key="aporteMonto_'+slot+'"]');
   const income=inc?parseNum(inc.value):0, pct=pctEl?parseNum(pctEl.value):0, mon=monEl?parseNum(monEl.value):0;
   let ap = pct>0 ? Math.round(income*pct/100) : mon; ap=Math.max(0,Math.min(ap,income));
   o.textContent = ap>0 ? ('Vas a apartar '+fmt(ap)+(pct>0?(' ('+pct+'% de tu sueldo)'):'')+' apenas cobres.') : 'No estás apartando ahorro este mes.'; }
+function pnKey(k){ const el=document.querySelector('[data-key="'+k+'"]'); return el?parseNum(el.value):0; }
+function sumMiFijosFromForm(){ let miF=0; const share=(summary&&summary.miShare)||0;
+  document.querySelectorAll('.fijoedit').forEach(fe=>{ const monto=parseNum(fe.querySelector('.fe-monto').value); const quien=fe.querySelector('.fe-quien').value, tipo=fe.querySelector('.fe-tipo').value;
+    if(tipo==='Hogar'){ if(quien==='Ambos') miF+=Math.round(monto*share); else if(quien===yo) miF+=monto; } else miF+=monto; });
+  return miF; }
+// Planificador en vivo: cruza sueldo/aporte/fijos/tarjeta (disponible) contra la suma de topes
+function updPresupuesto(){ const o=document.getElementById('presuHint'); if(!o) return;
+  const slot=(yo==='Vanessa')?'V':'L';
+  const income=pnKey('income'+slot), tarjeta=pnKey('tarjetas_'+slot);
+  const pct=pnKey('aportePct_'+slot), mon=pnKey('aporteMonto_'+slot);
+  let aporte=pct>0?Math.round(income*pct/100):mon; aporte=Math.max(0,Math.min(aporte,income));
+  const miF=sumMiFijosFromForm();
+  const disp=income-aporte-miF-tarjeta;
+  const T=Math.round(income*pnKey('pct_comer')/100)+Math.round(income*pnKey('pct_salidas')/100)+pnKey('cap_super');
+  const resto=disp-T;
+  if(income<=0){ o.innerHTML=''; return; }
+  const red='color:var(--clay)';
+  if(disp<=0) o.innerHTML='<b style="'+red+'">Disponible '+fmt(disp)+'.</b> Entre aporte, fijos y tarjeta ya te pasás del sueldo.';
+  else if(resto<0) o.innerHTML='<b style="'+red+'">⚠️ Tus topes ('+fmt(T)+') superan tu disponible ('+fmt(disp)+') por '+fmt(-resto)+'.</b> Bajá algún tope, el aporte, o revisá los fijos.';
+  else o.innerHTML='Disponible <b>'+fmt(disp)+'</b> (sueldo − aporte − fijos − tarjeta) · tus topes suman '+fmt(T)+' → queda <b>'+fmt(resto)+'</b> para el resto de categorías.';
+}
 let mepRate=0;
 async function fetchMep(){
   // 1) del lado del navegador (sin backend). 2) si falla (CORS), pruebo el backend como respaldo.
@@ -258,7 +283,7 @@ async function fetchMep(){
 function fijoIn(el){ const box=el.closest?el.closest('.fijoedit'):null; if(!box)return; const fid=box.dataset.fid;
   const cls=(el.className||'').split(' ').find(c=>c.indexOf('fe-')===0);
   const map={'fe-nombre':'nombre','fe-monto':'monto','fe-dia':'dia','fe-quien':'quien','fe-tipo':'tipo'};
-  if(map[cls]){ fijoDraft[fid]=fijoDraft[fid]||{}; fijoDraft[fid][map[cls]]=el.value; } }
+  if(map[cls]){ fijoDraft[fid]=fijoDraft[fid]||{}; fijoDraft[fid][map[cls]]=el.value; } updPresupuesto(); }
 let dashWho='yo'; // selector de Evolución: 'yo' | 'hogar'
 
 const fmt=n=>'$'+Math.round(n||0).toLocaleString('es-AR');
@@ -487,6 +512,13 @@ function viewBoard(){
   const aporte=s.aporte||0;
   const disp=(s.disponible!==undefined? s.disponible : (s.income-aporte-s.miFijos-s.tarjeta));
   const margen=(s.margen!==undefined? s.margen : (s.savings-aporte));
+  const topesSum=(t.comer||0)+(t.salidas||0)+(t.super||0);
+  const restoTopes=disp-topesSum;
+  const topesMsg = topesSum<=0
+    ? '<div class="hint">Comer y salidas se miden sobre tu ingreso; el súper es del hogar.</div>'
+    : (restoTopes<0
+       ? '<div class="warnbox">⚠️ Tus topes suman '+fmt(topesSum)+', más que tu disponible ('+fmt(disp)+'). Si los gastaras todos, quedás en <b>déficit de '+fmt(-restoTopes)+'</b>. Conviene bajarlos (o subir tu disponible).</div>'
+       : '<div class="okbox">Tus topes suman '+fmt(topesSum)+' de '+fmt(disp)+' disponible · queda <b>'+fmt(restoTopes)+'</b> para el resto de categorías (ropa, combustible, etc.).</div>');
   const pc=v=>v>=0?'pos':'neg';
   const sProj=(s.savingsProj!==undefined? s.savingsProj : calcSavingsProj(s));
   const projLine=(s.isCur&&sProj!==undefined&&sProj!==null)?'<div class="proj">Proyectado fin de mes <b class="'+pc(sProj)+'">'+fmt(sProj)+'</b></div>':'';
@@ -514,7 +546,7 @@ function viewBoard(){
     +meter('Comer + delivery',comer,t.comer,el,dim)
     +meter('Salidas',salidas,t.salidas,el,dim)
     +superMeter
-    +'<div class="hint">Comer y salidas se miden sobre tu ingreso. El súper suma lo compartido de los dos contra el tope del hogar.</div></div>'
+    +topesMsg+'</div>'
   +fijosCards(s)
   +'<div class="card"><div class="ct">Movimientos del mes</div><div class="hint" style="margin-top:0">Todos los tuyos y los compartidos (👥). Lo privado del otro no aparece.</div><div class="xscroll">'+list+'</div></div>';
 }
@@ -770,6 +802,7 @@ function viewCfg(){
   +row('pct_comer','Comer afuera (% de tu ingreso)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% de tu ingreso)','sugerido 5%',true)
   +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value);cfgIn(this)" data-key="cap_super" inputmode="decimal" value="'+dv('cap_super')+'"></div>'
   +(s&&s.superSug?'<div class="suggest" id="useSug">↳ usar sugerencia '+fmt(s.superSug)+'</div>':'')
+  +'<div id="presuHint" class="okbox" style="margin-top:12px"></div>'
   +'</div>'
   +'<div class="card" style="margin-bottom:80px"><div class="eyebrow">Gastos fijos</div>'
   +'<div class="hint"><b>Avanzado.</b> La lista ya está cargada. Entrá solo si querés ajustar un monto o agregar/sacar un fijo. Cada uno: nombre, monto, quién paga, tipo (Hogar/Personal) y día de vencimiento.</div>'
@@ -782,6 +815,7 @@ function wire(){
   try{updCalc();}catch(e){}
   try{updCuota();}catch(e){}
   try{updAporte();}catch(e){}
+  try{updPresupuesto();}catch(e){}
   document.querySelectorAll('[data-dwho]').forEach(b=>b.onclick=()=>{dashWho=b.dataset.dwho;render();});
   document.querySelectorAll('[data-addmode]').forEach(b=>b.onclick=()=>{addMode=b.dataset.addmode;render();});
   function syncAddInputs(){ const a=document.getElementById('iAmt'); if(a)draft.monto=a.value; const md=document.getElementById('iMedio'); if(md)draft.medio=md.value; const f=document.getElementById('iFecha'); if(f)draft.fecha=f.value; const nt=document.getElementById('iNota'); if(nt)draft.nota=nt.value; }
@@ -892,12 +926,23 @@ function wire(){
     const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
     Object.keys(up).forEach(k=>{ if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
     try{
-      await api({action:'saveFijos', ym:curYM, fijos:JSON.stringify(fijoUpdates)});   // una sola operación atómica (reemplaza la lista del mes)
+      post({action:'saveFijos', ym:curYM, fijos:fijoUpdates});   // POST atómico (sin límite de URL, no cuelga la UI)
       if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload));         // sueldo/tarjeta DEL MES
       if(Object.keys(globalUp).length) await api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}); // topes/avisos globales
       cfgDraft={}; fijoDraft={};
-      const sm=await api({action:'summary',ym:curYM});                             // recarga ya confirmada
-      if(sm&&!sm.error){ summary=sm; summary.config=summary.config||{}; Object.keys(up).forEach(k=>{ summary.config[k]=up[k]; }); }
+      const sm=await api({action:'summary',ym:curYM});                             // recarga (los avisos awaited le dan tiempo al POST de fijos)
+      if(sm&&!sm.error){
+        summary=sm; summary.config=summary.config||{}; Object.keys(up).forEach(k=>{ summary.config[k]=up[k]; });
+        // reaplico los fijos guardados por si la recarga llegó antes de que impactara el POST (no revierte)
+        const paidMap={}; (sm.fijosHogar||[]).concat(sm.misPersonales||[]).forEach(f=>paidMap[String(f.id)]=f.paid);
+        const norm=f=>({id:f.id,nombre:f.nombre,monto:+f.monto||0,quien:f.quien,tipo:f.tipo,dia:+f.dia||0,paid:!!paidMap[String(f.id)]});
+        summary.fijosHogar=fijoUpdates.filter(f=>f.tipo==='Hogar').map(norm);
+        summary.misPersonales=fijoUpdates.filter(f=>f.tipo!=='Hogar').map(norm);
+        summary.fijosHogarTotal=summary.fijosHogar.reduce((a,f)=>a+f.monto,0);
+        let miF=0; summary.misPersonales.forEach(f=>miF+=f.monto);
+        summary.fijosHogar.forEach(f=>{ if(f.quien==='Ambos') miF+=Math.round(f.monto*(summary.miShare||0)); else if(f.quien===yo) miF+=f.monto; });
+        summary.miFijos=miF; recompute();
+      }
       toast('✓ Guardado');
     }catch(e){ toast('No se pudo guardar del todo. Revisá la conexión y probá de nuevo.'); }
     finally{ dash=null; render(); }
