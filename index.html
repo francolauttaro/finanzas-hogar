@@ -892,7 +892,7 @@ function wire(){
     const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
     Object.keys(up).forEach(k=>{ if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
     try{
-      fijoUpdates.forEach(u=>post({action:'updateFijo', ym:curYM, id:u.id, nombre:u.nombre, monto:u.monto, dia:u.dia, quien:u.quien, tipo:u.tipo}));
+      await api({action:'saveFijos', ym:curYM, fijos:JSON.stringify(fijoUpdates)});   // una sola operación atómica (reemplaza la lista del mes)
       if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload));         // sueldo/tarjeta DEL MES
       if(Object.keys(globalUp).length) await api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}); // topes/avisos globales
       cfgDraft={}; fijoDraft={};
