@@ -265,7 +265,7 @@ function updPresupuesto(){ const o=document.getElementById('presuHint'); if(!o) 
   let aporte=pct>0?Math.round(income*pct/100):mon; aporte=Math.max(0,Math.min(aporte,income));
   const miF=sumMiFijosFromForm();
   const disp=income-aporte-miF-tarjeta;
-  const T=Math.round(income*pnKey('pct_comer')/100)+Math.round(income*pnKey('pct_salidas')/100)+pnKey('cap_super');
+  const T=Math.round(income*pnKey('pct_comer')/100)+Math.round(income*pnKey('pct_salidas')/100)+pnKey('cap_super')+pnKey('cap_empleada')+pnKey('cap_agua');
   const resto=disp-T;
   if(income<=0){ o.innerHTML=''; return; }
   const red='color:var(--clay)';
@@ -507,12 +507,14 @@ function viewBoard(){
   const sumc=cats=>mias.filter(e=>cats.includes(e.cat)).reduce((a,e)=>a+(+e.monto||0),0);
   const comer=sumc(['Comer afuera','Delivery']), salidas=sumc(['Salidas']);
   const superShared=(s.expenses||[]).filter(e=>e.vis==='compartido'&&e.cat==='Súper').reduce((a,e)=>a+(+e.monto||0),0);
+  const empleadaShared=(s.expenses||[]).filter(e=>e.vis==='compartido'&&e.cat==='Empleada doméstica').reduce((a,e)=>a+(+e.monto||0),0);
+  const aguaShared=(s.expenses||[]).filter(e=>e.vis==='compartido'&&e.cat==='Agua').reduce((a,e)=>a+(+e.monto||0),0);
   const t=s.topes||{};
   const miNC=mias.filter(e=>e.medio!=='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
   const aporte=s.aporte||0;
   const disp=(s.disponible!==undefined? s.disponible : (s.income-aporte-s.miFijos-s.tarjeta));
   const margen=(s.margen!==undefined? s.margen : (s.savings-aporte));
-  const topesSum=(t.comer||0)+(t.salidas||0)+(t.super||0);
+  const topesSum=(t.comer||0)+(t.salidas||0)+(t.super||0)+(t.empleada||0)+(t.agua||0);
   const restoTopes=disp-topesSum;
   const topesMsg = topesSum<=0
     ? '<div class="hint">Comer y salidas se miden sobre tu ingreso; el súper es del hogar.</div>'
@@ -525,6 +527,8 @@ function viewBoard(){
   const exAll=(s.expenses||[]).slice().reverse();
   const list=exAll.length?exAll.map(e=>'<div class="xrow"><span class="dot" style="background:'+(cc(e.cat))+'"></span><span class="d">'+e.cat+'<small>'+(e.quien===s.yo?'vos':e.quien)+' · '+e.medio+(e.quien!==s.yo&&e.vis==='compartido'?' · 👥':'')+(e.nota?' · '+e.nota:'')+' · '+e.date.slice(8,10)+'/'+e.date.slice(5,7)+'</small></span><span class="a">'+fmt(e.monto)+'</span>'+(e.quien===s.yo?'<button class="visx" data-vistoggle="'+e.id+'" data-vis="'+e.vis+'" title="'+(e.vis==='compartido'?'Compartido — tocá para hacerlo privado':'Privado — tocá para compartir')+'">'+(e.vis==='compartido'?'👥':'🔒')+'</button><button class="x" data-del="'+e.id+'">×</button>':'')+'</div>').join(''):'<div class="empty">Sin gastos este mes. Tocá <b>Cargar</b>.</div>';
   const superMeter=(superShared>0||t.super>0)? meter('Súper (hogar)',superShared,t.super,el,dim) : '';
+  const empleadaMeter=(empleadaShared>0||t.empleada>0)? meter('Empleada doméstica (hogar)',empleadaShared,t.empleada,el,dim) : '';
+  const aguaMeter=(aguaShared>0||t.agua>0)? meter('Agua (hogar)',aguaShared,t.agua,el,dim) : '';
   return insightsCard('board')
   +'<div class="card"><div class="eyebrow">Tu ahorro · '+labelYM(curYM)+'</div>'
   +(aporte>0
@@ -546,6 +550,8 @@ function viewBoard(){
     +meter('Comer + delivery',comer,t.comer,el,dim)
     +meter('Salidas',salidas,t.salidas,el,dim)
     +superMeter
+    +empleadaMeter
+    +aguaMeter
     +topesMsg+'</div>'
   +fijosCards(s)
   +'<div class="card"><div class="ct">Movimientos del mes</div><div class="hint" style="margin-top:0">Todos los tuyos y los compartidos (👥). Lo privado del otro no aparece.</div><div class="xscroll">'+list+'</div></div>';
@@ -673,7 +679,7 @@ function compBar(ingreso,fijos,tarjeta,ahorro){
   const li=(cls,lab,val)=>'<span><i class="sw '+cls+'"></i>'+lab+' <b>'+kf(val)+'</b> ('+pc(val)+')</span>';
   return '<div class="compbar">'+seg(fijos,'c-fij','Fijos')+seg(tarjeta,'c-tar','Tarjeta')+seg(varNC,'c-var','Variable')+seg(ah,'c-aho','Ahorro')+'</div>'
     +'<div class="legend compleg" style="flex-wrap:wrap;gap:8px 16px">'
-    + li('c-fij','Fijos',fijos) + li('c-tar','Tarjeta',tarjeta) + li('c-var','Variable',varReal) + li('c-aho','Ahorro',ahorro)
+    + li('c-fij','Fijos',fijos) + li('c-tar','Tarjeta',tarjeta) + li('c-var','Var. sin tarjeta',varReal) + li('c-aho','Ahorro',ahorro)
     +'</div>';
 }
 
@@ -700,9 +706,12 @@ function viewDash(){
     const byCat={}; exps.forEach(e=>{ byCat[e.cat]=(byCat[e.cat]||0)+(+e.monto||0); });
     const catRows=catOrder.filter(c=>byCat[c]>0);
     const varTot=catRows.reduce((a,c)=>a+byCat[c],0);
+    const varCard=exps.filter(e=>e.medio==='Tarjeta').reduce((a,e)=>a+(+e.monto||0),0);
+    const varCash=varTot-varCard;
     const maxC=Math.max(1,...catRows.map(c=>byCat[c]));
     const catHTML=catRows.length? catRows.map(c=>'<div class="catbar"><div class="top"><span>'+c+'</span><span>'+fmt(byCat[c])+pctI(byCat[c])+'</span></div><div class="tr"><div class="fl" style="width:'+(byCat[c]/maxC*100)+'%;background:'+cc(c)+'"></div></div></div>').join(''):'<div class="empty" style="padding:14px">Sin gasto variable este mes.</div>';
-    html+='<div class="blk">Tu gasto variable por categoría</div>'+catHTML+'<div class="ftot">Subtotal variable '+fmt(varTot)+pctI(varTot)+'</div>';
+    html+='<div class="blk">Tu gasto variable por categoría</div>'+catHTML+'<div class="ftot">Subtotal variable '+fmt(varTot)+pctI(varTot)+'</div>'
+      +(varCard>0? '<div class="okbox" style="margin-top:8px">De este total, <b>'+fmt(varCash)+'</b> lo pagaste por fuera de tarjeta (efectivo/débito): eso es lo que baja tu caja este mes y lo que ves como <b>«Var. sin tarjeta»</b> en la barra de arriba. Los otros <b>'+fmt(varCard)+'</b> fueron con tarjeta y se pagan en el resumen (por eso están en la franja «Tarjeta», no en «Variable»).</div>':'');
     // mis fijos
     const fList=fijosDetalleYo();
     const fijHTML=fList.length? fList.map(f=>'<div class="xrow"><span class="d">'+f.nombre+(f.paid?' <small style="color:var(--pine);font-weight:700">✓ pago</small>':'')+'</span><span class="a">'+fmt(f.monto)+pctI(f.monto)+'</span></div>').join(''):'<div class="empty" style="padding:14px">Sin fijos.</div>';
@@ -801,6 +810,8 @@ function viewCfg(){
   +'<div class="blk">Topes de '+labelYM(curYM)+'</div>'
   +row('pct_comer','Comer afuera (% de tu ingreso)','sugerido 8–10%',true)+row('pct_salidas','Salidas (% de tu ingreso)','sugerido 5%',true)
   +'<div class="cfgrow"><span class="k">Súper del hogar<small>'+(s&&s.superSug?('sugerido '+fmt(s.superSug)+' · prom. 3 meses'):'sin historial aún')+'</small></span><input class="ci" onfocus="this.select()" oninput="this.value=fmtNum(this.value);cfgIn(this)" data-key="cap_super" inputmode="decimal" value="'+dv('cap_super')+'"></div>'
+  +row('cap_empleada','Empleada doméstica','tope del mes · se paga semanal')
+  +row('cap_agua','Agua','tope del mes · se paga semanal')
   +(s&&s.superSug?'<div class="suggest" id="useSug">↳ usar sugerencia '+fmt(s.superSug)+'</div>':'')
   +'<div id="presuHint" class="okbox" style="margin-top:12px"></div>'
   +'</div>'
@@ -898,7 +909,7 @@ function wire(){
   const bAF=document.getElementById('bAddFijo'); if(bAF)bAF.onclick=async()=>{
     bAF.textContent='Agregando…'; bAF.disabled=true;
     try{
-      const res=await api({action:'addFijo',ym:curYM,nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1});
+      const res=await api({action:'addFijo',ym:curYM,nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1}, 25000);
       if(res&&res.ok&&res.fijo&&summary){ summary.misPersonales=(summary.misPersonales||[]).concat([res.fijo]); }
       else { const sm=await api({action:'summary',ym:curYM}); if(sm&&!sm.error) summary=sm; }
     }catch(e){ toast('No se pudo agregar. Probá de nuevo.'); }
@@ -923,29 +934,33 @@ function wire(){
     bCfg.textContent='Guardando…'; bCfg.disabled=true;
     // separo lo que es por-mes (sueldo, tarjeta y topes) de lo global (solo avisos)
     const mesPayload={ym:curYM}, globalUp={}; let hayMes=false;
-    const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
+    const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',cap_empleada:'cap_empleada',cap_agua:'cap_agua',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
     Object.keys(up).forEach(k=>{ if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
+    post({action:'saveFijos', ym:curYM, fijos:fijoUpdates});   // POST atómico (no cuelga ni tira error)
+    let saveOk=true;
     try{
-      post({action:'saveFijos', ym:curYM, fijos:fijoUpdates});   // POST atómico (sin límite de URL, no cuelga la UI)
-      if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload));         // sueldo/tarjeta DEL MES
-      if(Object.keys(globalUp).length) await api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}); // topes/avisos globales
-      cfgDraft={}; fijoDraft={};
-      const sm=await api({action:'summary',ym:curYM});                             // recarga (los avisos awaited le dan tiempo al POST de fijos)
-      if(sm&&!sm.error){
-        summary=sm; summary.config=summary.config||{}; Object.keys(up).forEach(k=>{ summary.config[k]=up[k]; });
-        // reaplico los fijos guardados por si la recarga llegó antes de que impactara el POST (no revierte)
-        const paidMap={}; (sm.fijosHogar||[]).concat(sm.misPersonales||[]).forEach(f=>paidMap[String(f.id)]=f.paid);
-        const norm=f=>({id:f.id,nombre:f.nombre,monto:+f.monto||0,quien:f.quien,tipo:f.tipo,dia:+f.dia||0,paid:!!paidMap[String(f.id)]});
-        summary.fijosHogar=fijoUpdates.filter(f=>f.tipo==='Hogar').map(norm);
-        summary.misPersonales=fijoUpdates.filter(f=>f.tipo!=='Hogar').map(norm);
-        summary.fijosHogarTotal=summary.fijosHogar.reduce((a,f)=>a+f.monto,0);
-        let miF=0; summary.misPersonales.forEach(f=>miF+=f.monto);
-        summary.fijosHogar.forEach(f=>{ if(f.quien==='Ambos') miF+=Math.round(f.monto*(summary.miShare||0)); else if(f.quien===yo) miF+=f.monto; });
-        summary.miFijos=miF; recompute();
-      }
-      toast('✓ Guardado');
-    }catch(e){ toast('No se pudo guardar del todo. Revisá la conexión y probá de nuevo.'); }
-    finally{ dash=null; render(); }
+      if(hayMes) await api(Object.assign({action:'saveMes'}, mesPayload), 25000);         // sueldo/tarjeta/topes DEL MES
+      if(Object.keys(globalUp).length) await api({action:'saveConfig', updates:JSON.stringify(globalUp), ym:curYM}, 25000); // avisos globales
+    }catch(e){ saveOk=false; }
+    cfgDraft={}; fijoDraft={};
+    // aplico lo guardado localmente SIEMPRE (así no revierte, pase lo que pase con la recarga)
+    if(summary){
+      summary.config=summary.config||{}; Object.keys(up).forEach(k=>{ summary.config[k]=up[k]; });
+      const prevPaid={}; (summary.fijosHogar||[]).concat(summary.misPersonales||[]).forEach(f=>prevPaid[String(f.id)]=f.paid);
+      const norm=f=>({id:f.id,nombre:f.nombre,monto:parseNum(f.monto),quien:f.quien,tipo:f.tipo,dia:+f.dia||0,paid:!!prevPaid[String(f.id)]});
+      summary.fijosHogar=fijoUpdates.filter(f=>f.tipo==='Hogar').map(norm);
+      summary.misPersonales=fijoUpdates.filter(f=>f.tipo!=='Hogar').map(norm);
+      summary.fijosHogarTotal=summary.fijosHogar.reduce((a,f)=>a+f.monto,0);
+      let miF=0; summary.misPersonales.forEach(f=>miF+=f.monto);
+      summary.fijosHogar.forEach(f=>{ if(f.quien==='Ambos') miF+=Math.round(f.monto*(summary.miShare||0)); else if(f.quien===yo) miF+=f.monto; });
+      summary.miFijos=miF; recompute();
+    }
+    dash=null; render();
+    toast(saveOk?'✓ Guardado':'Guardé lo que pude. Si algo no quedó, reintentá en un momento.');
+    // recarga en segundo plano para traer valores derivados (no es fatal si falla)
+    try{ const sm=await api({action:'summary',ym:curYM}, 25000);
+      if(sm&&!sm.error){ Object.keys(up).forEach(k=>{ sm.config=sm.config||{}; sm.config[k]=up[k]; }); summary=sm; dash=null; if(tab==='cfg')render(); }
+    }catch(e){}
   };
   // ---- Cuenta: cambiar usuario / PIN ----
   document.querySelectorAll('[data-mshift]').forEach(b=>b.onclick=()=>shiftMonth(+b.dataset.mshift));
