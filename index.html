@@ -534,6 +534,7 @@ function viewBoard(){
   +(aporte>0
     ? '<div class="saldo '+pc(s.savings)+'"><div class="cap">Ahorro del mes</div><div class="n '+pc(s.savings)+'">'+fmt(s.savings)+'</div><div class="apbreak">🔒 Comprometido <b>'+fmt(aporte)+'</b> · margen <b class="'+pc(margen)+'">'+fmt(margen)+'</b></div></div>'
     : '<div class="saldo '+pc(s.savings)+'"><div class="cap">Balance real del mes</div><div class="n '+pc(s.savings)+'">'+fmt(s.savings)+'</div><div class="sub '+pc(s.savings)+'" style="margin-top:2px">'+pctf(s.pct)+' de tu ingreso</div></div>')
+  +(aporte>0? '<div class="frow'+(s.aportePaid?' paid':'')+'" style="border-bottom:none;padding:8px 2px 0"><button class="paychk'+(s.aportePaid?' on':'')+'" data-payaporte="'+aporte+'">'+(s.aportePaid?'✓':'')+'</button><span class="fd" style="flex:1">'+(s.aportePaid?'Ya apartaste tu ahorro este mes ✓':'Marcá cuando ya separaste tu ahorro ('+fmt(aporte)+')')+'</span></div>' : '')
   + projLine
   +'<div style="margin-top:12px">'+compBar(s.income||0,s.miFijos||0,s.tarjeta||0,s.savings||0)+'</div>'
   +'<div class="hint" style="margin-top:8px">Cómo se reparte tu ingreso hasta hoy (día '+el+' de '+dim+'). El proyectado estima el cierre al ritmo actual.</div></div>'
@@ -891,6 +892,12 @@ function wire(){
     dash=null; toast(nv==='compartido'?'👥 Ahora es compartido':'🔒 Ahora es privado'); render();
   });
   // marcar/desmarcar el pago de la tarjeta del mes
+  document.querySelectorAll('[data-payaporte]').forEach(b=>b.onclick=()=>{
+    const paid=summary&&summary.aportePaid;
+    post({action: paid?'quitarPago':'marcarPago', fijoId:'aporte:'+yo, mes:curYM, nombre:'Aporte ahorro ('+yo+')', monto:+b.dataset.payaporte||0, quien:yo, tipo:'Ahorro'});
+    if(summary) summary.aportePaid=!paid;
+    render();
+  });
   document.querySelectorAll('[data-paycard]').forEach(b=>b.onclick=()=>{
     const paid=summary&&summary.tarjetaPaid;
     post({action: paid?'quitarPago':'marcarPago', fijoId:'card:'+yo, mes:curYM, nombre:'Tarjeta ('+yo+')', monto:+b.dataset.paycard||0, quien:yo, tipo:'Tarjeta'});
@@ -925,9 +932,10 @@ function wire(){
     const up={};
     document.querySelectorAll('.ci').forEach(i=>{if(i.value!=='')up[i.dataset.key]= /pct/i.test(i.dataset.key)? (parseFloat(String(i.value).replace(',','.'))||0) : parseNum(i.value);});
     document.querySelectorAll('.cs').forEach(i=>{up[i.dataset.key]=i.value;});
-    const fijoUpdates=[];
+    const editedIds=Object.keys(fijoDraft);   // fijos que el usuario realmente tocó
+    const allFijoDom=[];
     document.querySelectorAll('.fijoedit').forEach(fe=>{
-      fijoUpdates.push({ id:fe.dataset.fid, nombre:fe.querySelector('.fe-nombre').value,
+      allFijoDom.push({ id:fe.dataset.fid, nombre:fe.querySelector('.fe-nombre').value,
         monto:parseNum(fe.querySelector('.fe-monto').value), dia:parseInt(fe.querySelector('.fe-dia').value)||0,
         quien:fe.querySelector('.fe-quien').value, tipo:fe.querySelector('.fe-tipo').value });
     });
@@ -937,7 +945,8 @@ function wire(){
     const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',cap_empleada:'cap_empleada',cap_agua:'cap_agua',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
     Object.keys(up).forEach(k=>{ if(String(up[k])===String(cur[k]!==undefined?cur[k]:'')) return;   // sin cambios: no lo mando
       if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
-    post({action:'saveFijos', ym:curYM, fijos:fijoUpdates});   // POST atómico (no cuelga ni tira error)
+    // fijos: SOLO updates puntuales de los que editaste (nunca reemplaza la lista → no puede borrar)
+    allFijoDom.forEach(f=>{ if(editedIds.indexOf(String(f.id))>=0) post({action:'updateFijo', ym:curYM, id:f.id, nombre:f.nombre, monto:f.monto, dia:f.dia, quien:f.quien, tipo:f.tipo}); });
     let saveOk=true;
     const tasks=[];
     if(hayMes) tasks.push(api(Object.assign({action:'saveMes'}, mesPayload), 25000));                 // sueldo/tarjeta/topes DEL MES
@@ -949,8 +958,8 @@ function wire(){
       summary.config=summary.config||{}; Object.keys(up).forEach(k=>{ summary.config[k]=up[k]; });
       const prevPaid={}; (summary.fijosHogar||[]).concat(summary.misPersonales||[]).forEach(f=>prevPaid[String(f.id)]=f.paid);
       const norm=f=>({id:f.id,nombre:f.nombre,monto:parseNum(f.monto),quien:f.quien,tipo:f.tipo,dia:+f.dia||0,paid:!!prevPaid[String(f.id)]});
-      summary.fijosHogar=fijoUpdates.filter(f=>f.tipo==='Hogar').map(norm);
-      summary.misPersonales=fijoUpdates.filter(f=>f.tipo!=='Hogar').map(norm);
+      summary.fijosHogar=allFijoDom.filter(f=>f.tipo==='Hogar').map(norm);
+      summary.misPersonales=allFijoDom.filter(f=>f.tipo!=='Hogar').map(norm);
       summary.fijosHogarTotal=summary.fijosHogar.reduce((a,f)=>a+f.monto,0);
       let miF=0; summary.misPersonales.forEach(f=>miF+=f.monto);
       summary.fijosHogar.forEach(f=>{ if(f.quien==='Ambos') miF+=Math.round(f.monto*(summary.miShare||0)); else if(f.quien===yo) miF+=f.monto; });
