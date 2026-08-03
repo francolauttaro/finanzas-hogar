@@ -390,6 +390,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=async()=>{
   if(tab==='dash'&&!dash){ dash=await api({action:'dashboard',ym:curYM}); if(tab==='dash')render(); }
   if(tab==='cuotas'&&!cuotas){ const c=await api({action:'cuotas',ym:curYM}); cuotas=c; if(tab==='cuotas')render(); }
 });
+function prevYM(ym){ const p=String(ym).split('-'); const d=new Date(+p[0],(+p[1])-2,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function shiftMonth(d){
   const[y,m]=curYM.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
@@ -819,7 +820,9 @@ function viewCfg(){
   +'<div class="card" style="margin-bottom:80px"><div class="eyebrow">Gastos fijos</div>'
   +'<div class="hint"><b>Avanzado.</b> La lista ya está cargada. Entrá solo si querés ajustar un monto o agregar/sacar un fijo. Cada uno: nombre, monto, quién paga, tipo (Hogar/Personal) y día de vencimiento.</div>'
   +'<div style="margin-top:10px">'+(allF.length?allF.map(fijoEdit).join(''):'<div class="empty">Sin fijos. Agregá el primero.</div>')+'</div>'
-  +'<button class="btn ghost" id="bAddFijo">+ Agregar gasto fijo</button></div>'
+  +'<button class="btn ghost" id="bAddFijo">+ Agregar gasto fijo</button>'
+  +'<button class="btn ghost" id="bCopyFijos" style="margin-top:8px">Copiar los fijos de '+labelYM(prevYM(curYM))+'</button>'
+  +'<div class="mf" style="margin-top:4px">Reemplaza la lista de este mes con la del mes anterior (útil si un mes quedó vacío).</div></div>'
   +'<div class="savebar"><button class="btn" id="bCfg">Guardar el mes</button></div>';
 }
 
@@ -913,6 +916,17 @@ function wire(){
     dash=null; render();
   });
   // agregar fijo
+  const bcf=document.getElementById('bCopyFijos'); if(bcf)bcf.onclick=async()=>{
+    const pm=prevYM(curYM);
+    if(!confirm('Esto reemplaza los fijos de '+labelYM(curYM)+' con los de '+labelYM(pm)+'. ¿Seguir?'))return;
+    bcf.textContent='Copiando…'; bcf.disabled=true;
+    try{
+      const r=await api({action:'copyFijos', ym:curYM, from:pm}, 25000);
+      if(r&&r.ok){ const sm=await api({action:'summary',ym:curYM}, 25000); if(sm&&!sm.error) summary=sm; toast('✓ Copiados '+r.n+' fijos de '+labelYM(pm)); }
+      else toast('No hay fijos en '+labelYM(pm)+' para copiar.');
+    }catch(e){ toast('No se pudo copiar. Reintentá.'); }
+    finally{ dash=null; render(); }
+  };
   const bAF=document.getElementById('bAddFijo'); if(bAF)bAF.onclick=async()=>{
     bAF.textContent='Agregando…'; bAF.disabled=true;
     try{
