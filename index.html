@@ -955,10 +955,10 @@ function wire(){
     });
     bCfg.textContent='Guardando…'; bCfg.disabled=true;
     // separo lo que es por-mes (sueldo, tarjeta y topes) de lo global (solo avisos)
-    const mesPayload={ym:curYM}, globalUp={}; let hayMes=false; const cur=(summary&&summary.config)||{};
+    const mesPayload={ym:curYM}, globalUp={}; let hayMes=false;
     const MESMAP={incomeL:'incomeL',incomeV:'incomeV',tarjetas_L:'tarjL',tarjetas_V:'tarjV',pct_comer:'pct_comer',pct_salidas:'pct_salidas',cap_super:'cap_super',cap_empleada:'cap_empleada',cap_agua:'cap_agua',tope_tarjeta_L:'tope_tarjeta_L',tope_tarjeta_V:'tope_tarjeta_V',aportePct_L:'aportePct_L',aportePct_V:'aportePct_V',aporteMonto_L:'aporteMonto_L',aporteMonto_V:'aporteMonto_V',aporteUsd_L:'aporteUsd_L',aporteUsd_V:'aporteUsd_V'};
-    Object.keys(up).forEach(k=>{ if(String(up[k])===String(cur[k]!==undefined?cur[k]:'')) return;   // sin cambios: no lo mando
-      if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
+    // foto COMPLETA del mes: mando todos los valores visibles (no solo los que cambiaron), para que el mes quede independiente y no vuelva al global
+    Object.keys(up).forEach(k=>{ if(MESMAP[k]!==undefined){ mesPayload[MESMAP[k]]=up[k]; hayMes=true; } else globalUp[k]=up[k]; });
     // fijos: SOLO updates puntuales de los que editaste (nunca reemplaza la lista → no puede borrar)
     allFijoDom.forEach(f=>{ if(editedIds.indexOf(String(f.id))>=0) post({action:'updateFijo', ym:curYM, id:f.id, nombre:f.nombre, monto:f.monto, dia:f.dia, quien:f.quien, tipo:f.tipo}); });
     let saveOk=true;
