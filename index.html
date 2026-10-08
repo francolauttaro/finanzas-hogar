@@ -325,14 +325,14 @@ function post(b){
 function cacheKey(ym){return 'fh_v3_'+(yo||'x')+'_'+ym;}
 function saveCache(){ if(!summary||summary.error||loading) return; try{ localStorage.setItem(cacheKey(curYM), JSON.stringify({summary,dash,cuotas})); }catch(e){} }
 function loadCache(ym){ try{ const s=localStorage.getItem(cacheKey(ym)); return s?JSON.parse(s):null; }catch(e){ return null; } }
-async function fetchBundle(){
-  const d=await api({action:'all',ym:curYM});
-  if(d&&d.error==='action?'){ const sm=await api({action:'summary',ym:curYM}); return {summary:sm,dash:null,cuotas:null}; } // backend viejo
+async function fetchBundle(ym){
+  const d=await api({action:'all',ym:ym});
+  if(d&&d.error==='action?'){ const sm=await api({action:'summary',ym:ym}); return {summary:sm,dash:null,cuotas:null}; } // backend viejo
   if(!d||d.error) throw new Error((d&&d.error)||'respuesta vacía');
   return {summary:d.summary,dash:d.dashboard,cuotas:d.cuotas};
 }
-let _rc=null, lastSave=0;
-function reconciliar(delay){ clearTimeout(_rc); _rc=setTimeout(async()=>{ const ae=document.activeElement; if(tab==='cfg'||(ae&&/INPUT|SELECT|TEXTAREA/.test(ae.tagName))) return; try{ summary=await api({action:'summary',ym:curYM}); dash=null; render(); }catch(e){} }, delay||2500); }
+let _rc=null, lastSave=0, loadSeq=0;
+function reconciliar(delay){ clearTimeout(_rc); _rc=setTimeout(async()=>{ const ae=document.activeElement; if(tab==='cfg'||(ae&&/INPUT|SELECT|TEXTAREA/.test(ae.tagName))) return; const myYM=curYM; try{ const sm=await api({action:'summary',ym:myYM}); if(myYM!==curYM) return; summary=sm; dash=null; render(); }catch(e){} }, delay||2500); }
 function toast(msg){
   let t=document.getElementById('toast');
   if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
@@ -363,16 +363,18 @@ function recompute(){
 }
 
 async function loadAll(){
-  const reqStamp=Date.now();
-  const c=loadCache(curYM);
+  const myYM=curYM; const mySeq=++loadSeq; const reqStamp=Date.now();
+  const c=loadCache(myYM);
   if(c&&c.summary){ summary=c.summary; dash=c.dash||null; cuotas=c.cuotas||null; loading=false; netError=false; render(); }
   else { summary=null; dash=null; cuotas=null; loading=true; netError=false; render(); }
   try{
-    const b=await fetchBundle();
+    const b=await fetchBundle(myYM);
+    if(mySeq!==loadSeq || myYM!==curYM) return;              // ya cambiaste de mes / hay una carga más nueva → descarto
     if(editStamp>reqStamp){ loading=false; render(); return; } // hubo edición local mientras cargaba
     summary=b.summary; dash=b.dash; cuotas=b.cuotas;
     loading=false; netError=false; render();
   }catch(e){
+    if(mySeq!==loadSeq || myYM!==curYM) return;              // idem: no toco el mes actual con un error viejo
     loading=false;
     if(!summary){ netError=true; }   // solo error duro si no hay nada cacheado que mostrar
     render();
@@ -387,8 +389,8 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=async()=>{
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
   render(); // muestra el contenido o un spinner al instante
   // carga diferida de las secciones pesadas
-  if(tab==='dash'&&!dash){ dash=await api({action:'dashboard',ym:curYM}); if(tab==='dash')render(); }
-  if(tab==='cuotas'&&!cuotas){ const c=await api({action:'cuotas',ym:curYM}); cuotas=c; if(tab==='cuotas')render(); }
+  if(tab==='dash'&&!dash){ const myYM=curYM; const dd=await api({action:'dashboard',ym:myYM}); if(tab==='dash'&&curYM===myYM){ dash=dd; render(); } }
+  if(tab==='cuotas'&&!cuotas){ const myYM=curYM; const cc=await api({action:'cuotas',ym:myYM}); if(tab==='cuotas'&&curYM===myYM){ cuotas=cc; render(); } }
 });
 function prevYM(ym){ const p=String(ym).split('-'); const d=new Date(+p[0],(+p[1])-2,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function shiftMonth(d){
@@ -919,22 +921,23 @@ function wire(){
   const bcf=document.getElementById('bCopyFijos'); if(bcf)bcf.onclick=async()=>{
     const pm=prevYM(curYM);
     if(!confirm('Esto reemplaza los fijos de '+labelYM(curYM)+' con los de '+labelYM(pm)+'. ¿Seguir?'))return;
-    bcf.textContent='Copiando…'; bcf.disabled=true;
+    bcf.textContent='Copiando…'; bcf.disabled=true; const myYM=curYM;
     try{
-      const r=await api({action:'copyFijos', ym:curYM, from:pm}, 25000);
-      if(r&&r.ok){ const sm=await api({action:'summary',ym:curYM}, 25000); if(sm&&!sm.error) summary=sm; toast('✓ Copiados '+r.n+' fijos de '+labelYM(pm)); }
+      const r=await api({action:'copyFijos', ym:myYM, from:pm}, 25000);
+      if(r&&r.ok){ const sm=await api({action:'summary',ym:myYM}, 25000); if(sm&&!sm.error&&myYM===curYM) summary=sm; toast('✓ Copiados '+r.n+' fijos de '+labelYM(pm)); }
       else toast('No hay fijos en '+labelYM(pm)+' para copiar.');
     }catch(e){ toast('No se pudo copiar. Reintentá.'); }
-    finally{ dash=null; render(); }
+    finally{ dash=null; if(myYM===curYM)render(); }
   };
   const bAF=document.getElementById('bAddFijo'); if(bAF)bAF.onclick=async()=>{
-    bAF.textContent='Agregando…'; bAF.disabled=true;
+    bAF.textContent='Agregando…'; bAF.disabled=true; const myYM=curYM;
     try{
-      const res=await api({action:'addFijo',ym:curYM,nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1}, 25000);
+      const res=await api({action:'addFijo',ym:myYM,nombre:'Nuevo gasto',monto:0,quien:yo,tipo:'Personal',dia:1}, 25000);
+      if(myYM!==curYM) return;
       if(res&&res.ok&&res.fijo&&summary){ summary.misPersonales=(summary.misPersonales||[]).concat([res.fijo]); }
-      else { const sm=await api({action:'summary',ym:curYM}); if(sm&&!sm.error) summary=sm; }
+      else { const sm=await api({action:'summary',ym:myYM}); if(sm&&!sm.error&&myYM===curYM) summary=sm; }
     }catch(e){ toast('No se pudo agregar. Probá de nuevo.'); }
-    finally{ render(); }   // SIEMPRE re-renderiza: el botón nunca queda en "Agregando…"
+    finally{ if(myYM===curYM)render(); }   // re-render solo si seguís en el mes
   };
   // borrar fijo (optimista: desaparece al instante)
   document.querySelectorAll('[data-delf]').forEach(b=>b.onclick=()=>{ if(!confirm('¿Eliminar este gasto fijo?'))return;
@@ -982,8 +985,9 @@ function wire(){
     dash=null; render();
     toast(saveOk?'✓ Guardado':'Guardé lo que pude. Si algo no quedó, reintentá en un momento.');
     // recarga en segundo plano para traer valores derivados (no es fatal si falla)
-    try{ const sm=await api({action:'summary',ym:curYM}, 25000);
-      if(sm&&!sm.error){ Object.keys(up).forEach(k=>{ sm.config=sm.config||{}; sm.config[k]=up[k]; }); summary=sm; dash=null; if(tab==='cfg')render(); }
+    const myYM=curYM;
+    try{ const sm=await api({action:'summary',ym:myYM}, 25000);
+      if(sm&&!sm.error && myYM===curYM){ Object.keys(up).forEach(k=>{ sm.config=sm.config||{}; sm.config[k]=up[k]; }); summary=sm; dash=null; if(tab==='cfg')render(); }
     }catch(e){}
   };
   // ---- Cuenta: cambiar usuario / PIN ----
